@@ -5,7 +5,8 @@ node_modules/
 .vscode/
 
 # compiled output
-/dist
+dist/
+dist
 /node_modules
 /build
 

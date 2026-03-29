@@ -23,6 +23,7 @@ services:
   db:
     image: postgres:16
     restart: always
+    container_name: db
     environment:
       POSTGRES_USER: ${DB_USER}
       POSTGRES_PASSWORD: ${DB_PASSWORD}

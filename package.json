@@ -1,0 +1,11 @@
+{
+	"name": "sigmaquotes-workspace",
+	"version": "1.0.0",
+	"private": true,
+	"scripts": {
+		"dev": "pnpm --parallel --filter frontend --filter backend run dev"
+	},
+	"engines": {
+		"pnpm": ">=8.0.0"
+	}
+}

@@ -13,7 +13,9 @@ Projekt został podzielony na trzy główne moduły (monorepo):
 ## 🚀 Technologie
 
 - **Bot:** Python 3.12, `discord.py`, `google-genai`
-- **Backend:** Node.js 20, NestJS, Prisma, PostgreSQL
+
+* **Backend:** Node.js 24, NestJS, Prisma, PostgreSQL
+
 - **Frontend:** React, TypeScript, Vite, TailwindCSS (opcjonalnie)
 - **Deployment:** Docker Compose, PM2, GitHub Actions (CI/CD)
 
