@@ -11,9 +11,8 @@ jobs:
         steps:
             - uses: actions/checkout@v4
 
-            - name: Deploy to VPS
+            - name: Deploy containers via Docker Compose
               uses: appleboy/ssh-action@v1.2.4
-
               with:
                   host: ${{ secrets.DEPLOY_HOST }}
                   username: ${{ secrets.DEPLOY_USER }}
@@ -23,3 +22,15 @@ jobs:
                       cd ./sigmaquotes
                       git pull origin main
                       sudo docker compose up -d --build
+
+            - name: Restart Python Bot via PM2
+              uses: appleboy/ssh-action@v1.2.4
+              with:
+                  host: ${{ secrets.DEPLOY_HOST }}
+                  username: ${{ secrets.DEPLOY_USER }}
+                  key: ${{ secrets.DEPLOY_KEY }}
+                  port: ${{ secrets.DEPLOY_PORT }}
+                  script: |
+                      cd ./sigmaquotes/boty
+                      pm2 restart sigmaquotes.py --name "sigmaquotes" || pm2 start sigmaquotes.py --name "sigmaquotes" --interpreter python3
+                      pm2 save
