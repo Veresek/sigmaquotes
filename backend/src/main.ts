@@ -3,7 +3,8 @@ import { AppModule } from './app.module';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
-  await app.listen(process.env.PORT ?? 8000);
+  // Dodajemy '0.0.0.0' aby aplikacja wewnątrz Dockera nasłuchiwała na zewnątrz sieci kontenera
+  await app.listen(process.env.PORT ?? 8000, '0.0.0.0');
   app.enableCors({
     origin: [
       'http://localhost:3000',
