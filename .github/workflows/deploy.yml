@@ -51,5 +51,6 @@ jobs:
                   port: ${{ secrets.DEPLOY_PORT }}
                   script: |
                       cd ./sigmaquotes/bots
+                      pip3 install -r requirements.txt
                       pm2 restart sigmaquotes.py --name "sigmaquotes" || pm2 start sigmaquotes.py --name "sigmaquotes" --interpreter python3
                       pm2 save
