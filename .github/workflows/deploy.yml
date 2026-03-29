@@ -51,6 +51,10 @@ jobs:
                   port: ${{ secrets.DEPLOY_PORT }}
                   script: |
                       cd ./sigmaquotes/bots
-                      pip3 install -r requirements.txt
-                      pm2 restart sigmaquotes.py --name "sigmaquotes" || pm2 start sigmaquotes.py --name "sigmaquotes" --interpreter python3
+                      if [ ! -d "venv" ]; then
+                          python3 -m venv venv
+                      fi
+                      source venv/bin/activate
+                      pip install -r requirements.txt
+                      pm2 restart sigmaquotes.py --name "sigmaquotes" --interpreter ./venv/bin/python || pm2 start sigmaquotes.py --name "sigmaquotes" --interpreter ./venv/bin/python
                       pm2 save
