@@ -52,9 +52,9 @@ async def cwel_manifesto_scraper():
 
 @client.event
 async def on_ready():
-    print(f'Zalogowano jako {client.user}')
+    print(f'Logged in as {client.user}')
     await cwel_manifesto_scraper()
-    print("Manifest wczytany pomyślnie")
+    print("Manifest loaded successfully")
 
 @client.event
 async def on_message(message):
@@ -69,7 +69,7 @@ async def on_message(message):
         return
 
     if client.user and client.user.mentioned_in(message):
-        print(f"Otrzymano wzmiankę, długość: {len(message.content)}")
+        print(f"Received mention, length: {len(message.content)}")
 
         if message.reference and message.reference.message_id:
             try:
@@ -81,7 +81,7 @@ async def on_message(message):
                     await message.reply("Gościuuu ta wiadomość jest pusta, pewnie tylko obrazek.")
                     return
 
-                backend_url = os.getenv('BACKEND_URL', 'http://localhost:8000/quotes')
+                backend_url = os.getenv('BACKEND_URL', 'http://127.0.0.1:8000/quotes')
                 async with aiohttp.ClientSession() as session:
                     async with session.post(backend_url, json={"author": author_name, "content": quote_content}) as resp:
                         if resp.status in (200, 201):
@@ -90,7 +90,7 @@ async def on_message(message):
                             await message.reply(f"Niepowodzenie, backend zwrócił błąd: {resp.status}")
                 return
             except Exception as e:
-                print(f"Błąd przy cytowaniu: {e}")
+                print(f"Error during quote saving: {e}")
                 await message.reply("Nie udało się pobrać wiadomości lub połączyć z bazą danych.")
                 return
 
