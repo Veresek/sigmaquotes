@@ -1,4 +1,5 @@
 import discord
+import aiohttp
 from google import genai
 from dotenv import load_dotenv
 import os
@@ -69,6 +70,30 @@ async def on_message(message):
 
     if client.user and client.user.mentioned_in(message):
         print(f"Otrzymano wzmiankę, długość: {len(message.content)}")
+
+        if message.reference and message.reference.message_id:
+            try:
+                replied_msg = message.reference.cached_message or await message.channel.fetch_message(message.reference.message_id)
+                author_name = replied_msg.author.display_name
+                quote_content = replied_msg.content
+
+                if not quote_content.strip():
+                    await message.reply("Gościuuu ta wiadomość jest pusta, pewnie tylko obrazek.")
+                    return
+
+                backend_url = os.getenv('BACKEND_URL', 'http://localhost:8000/quotes')
+                async with aiohttp.ClientSession() as session:
+                    async with session.post(backend_url, json={"author": author_name, "content": quote_content}) as resp:
+                        if resp.status in (200, 201):
+                            await message.reply(f"🗿 Dodano cytat\n**Autor:** {author_name}")
+                        else:
+                            await message.reply(f"Niepowodzenie, backend zwrócił błąd: {resp.status}")
+                return
+            except Exception as e:
+                print(f"Błąd przy cytowaniu: {e}")
+                await message.reply("Nie udało się pobrać wiadomości lub połączyć z bazą danych.")
+                return
+
         if len(message.content) > 10:
             response = generate_content(message.content)
             if response and response.strip():
