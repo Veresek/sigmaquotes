@@ -12,14 +12,16 @@ function App() {
 
 	const fetchQuotes = async () => {
 		try {
-			const res = await fetch("http://localhost:8000/quotes");
+			const apiUrl =
+				import.meta.env.VITE_API_URL ||
+				`${window.location.protocol}//${window.location.hostname}:8000`;
+			const res = await fetch(`${apiUrl}/quotes`);
 			const data = await res.json();
 			setQuotes(data);
 		} catch (error) {
 			console.error("Error fetching quotes:", error);
 		}
 	};
-
 	useEffect(() => {
 		fetchQuotes();
 	}, []);
