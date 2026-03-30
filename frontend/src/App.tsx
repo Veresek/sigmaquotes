@@ -12,10 +12,7 @@ function App() {
 
 	const fetchQuotes = async () => {
 		try {
-			const apiUrl =
-				import.meta.env.VITE_API_URL ||
-				`${window.location.protocol}//${window.location.hostname}:8000`;
-			const res = await fetch(`${apiUrl}/quotes`);
+			const res = await fetch(`/api/quotes`);
 			const data = await res.json();
 			setQuotes(data);
 		} catch (error) {
