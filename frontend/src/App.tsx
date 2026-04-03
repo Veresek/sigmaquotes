@@ -11,16 +11,16 @@ interface Quote {
 function App() {
 	const [quotes, setQuotes] = useState<Quote[]>([]);
 
-	const fetchQuotes = async () => {
-		try {
-			const res = await fetch(`/api/quotes`);
-			const data = await res.json();
-			setQuotes(data);
-		} catch (error) {
-			console.error("Error fetching quotes:", error);
-		}
-	};
 	useEffect(() => {
+		const fetchQuotes = async () => {
+			try {
+				const res = await fetch(`/api/quotes`);
+				const data = await res.json();
+				setQuotes(data);
+			} catch (error) {
+				console.error("Error fetching quotes:", error);
+			}
+		};
 		fetchQuotes();
 	}, []);
 
