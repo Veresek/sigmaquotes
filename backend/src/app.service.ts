@@ -11,7 +11,9 @@ export class AppService {
     return await prisma.quotes.findMany();
   }
 
-  async getManifesto() {
+  async getManifesto(): Promise<
+    { content: string; created_at?: Date } | { content: string }
+  > {
     const manifesto = await prisma.manifest.findFirst({
       orderBy: {
         created_at: 'desc',

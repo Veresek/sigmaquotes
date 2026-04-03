@@ -22,7 +22,7 @@ export class AppController {
 
   @Post('manifesto')
   async updateManifesto(@Body() body: { content: string }) {
-    return this.appService.updateManifesto(body.content);
+    await this.appService.updateManifesto(body.content);
   }
 
   @Post('quotes')
