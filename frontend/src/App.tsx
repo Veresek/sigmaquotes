@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import "./App.css";
 
 interface Quote {
@@ -30,6 +31,19 @@ function App() {
 				<p className="subtitle">
 					Sigmastyczne cytaty z sigmastycznego discorda
 				</p>
+				<nav>
+					<Link
+						to="/manifesto"
+						className="nav-link"
+						style={{
+							color: "white",
+							textDecoration: "underline",
+							marginTop: "10px",
+							display: "inline-block",
+						}}>
+						Przeczytaj manifest cwela
+					</Link>
+				</nav>
 			</header>
 
 			<main>
@@ -37,7 +51,6 @@ function App() {
 					{quotes.map(quote => (
 						<div key={quote.id} className="quote-card">
 							<p className="quote-content">"{quote.content}"</p>
-							<p className="quote-author">- {quote.author}</p>
 						</div>
 					))}
 					{quotes.length == 0 && <p className="no-quotes">Brak cytatów.</p>}

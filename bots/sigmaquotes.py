@@ -50,6 +50,21 @@ async def cwel_manifesto_scraper():
     if not cwel_manifesto:
         print(f"Warning: Scraped manifesto from channel {CWEL_MANIFESTO_ID} is empty")
 
+    base_url = os.getenv('BACKEND_URL', 'http://127.0.0.1:8000/quotes')
+    backend_url = base_url.replace('/quotes', '/manifesto')
+    if '/manifesto' not in backend_url:
+        backend_url = f"{base_url.rstrip('/')}/manifesto"
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(backend_url, json={"content": cwel_manifesto}) as resp:
+                if resp.status in (200, 201):
+                    print("Manifest updated in database.")
+                else:
+                    print(f"Failed to update manifest in database: {resp.status}")
+    except Exception as e:
+        print(f"Error during manifest update: {e}")
+
 @client.event
 async def on_ready():
     print(f'Logged in as {client.user}')
@@ -60,6 +75,9 @@ async def on_ready():
 async def on_message(message):
     if message.author == client.user:
         return
+
+    if message.channel.id == CWEL_MANIFESTO_ID:
+        await cwel_manifesto_scraper()
 
     if "zasady serwera" in message.content.lower():
         if cwel_manifesto:
@@ -102,5 +120,15 @@ async def on_message(message):
                 await message.reply("Nie wiem co powiedzieć, zatkało mnie.")
         else:
             await message.reply("Szkoda prądu na takie gówno")
+
+@client.event
+async def on_message_edit(before, after):
+    if after.channel.id == CWEL_MANIFESTO_ID:
+        await cwel_manifesto_scraper()
+
+@client.event
+async def on_message_delete(message):
+    if message.channel.id == CWEL_MANIFESTO_ID:
+        await cwel_manifesto_scraper()
 
 client.run(str(TOKEN_DISCORD))

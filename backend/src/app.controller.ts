@@ -15,6 +15,16 @@ export class AppController {
     return this.appService.getQuotes();
   }
 
+  @Get('manifesto')
+  async getManifesto() {
+    return this.appService.getManifesto();
+  }
+
+  @Post('manifesto')
+  async updateManifesto(@Body() body: { content: string }) {
+    return this.appService.updateManifesto(body.content);
+  }
+
   @Post('quotes')
   async createQuote(@Body() body: { author: string; content: string }) {
     return this.appService.createQuote(body.author, body.content);
