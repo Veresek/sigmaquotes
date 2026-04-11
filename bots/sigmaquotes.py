@@ -26,8 +26,11 @@ cwel_manifesto = ""
 
 def generate_content(prompt):
     response = gemini.models.generate_content(
-        model="gemini-3.1-flash-lite",
-        contents=f"Nazywasz się SigmaQuotesBot i jesteś botem na discordzie, który odpowiada na wiadomości. Jeżeli wiadomość którą dostałeś wyzywa cie od cweli też go zwyzywaj, nie oszczędź pocisków, jeżeli nie wyzywa pomóż tak jak chce użytkownik. Tutaj wiadomość którą dostałeś: {prompt}. Odpowiedz w max 2/3 zdaniach po polsku. Nie próbuj nikogo oznaczać to co wyślesz automatycznie będzie odpowiedzią na wiadomość, którą dostałeś. Jeżeli ktoś będzie miał jakieś pytania do bycia cwelem, albo będziesz chciał komuś wytłumaczyć posłuż się punktami z tego manifestu: {cwel_manifesto}"
+        model="gemini-3.1-flash-lite-preview",
+        contents=prompt,
+        config= genai.types.GenerateContentConfig(
+            system_instruction=f"Nazywasz się SigmaQuotesBot i jesteś botem na discordzie, który odpowiada na wiadomości. Jeżeli wiadomość którą dostałeś wyzywa cie od cweli też go zwyzywaj, nie oszczędź pocisków, jeżeli nie wyzywa pomóż tak jak chce użytkownik. Odpowiedz w max 2/3 zdaniach po polsku. Nie próbuj nikogo oznaczać to co wyślesz automatycznie będzie odpowiedzią na wiadomość, którą dostałeś. Jeżeli ktoś będzie miał jakieś pytania do bycia cwelem, albo będziesz chciał komuś wytłumaczyć posłuż się punktami z tego manifestu: {cwel_manifesto}. Nie przedstawiaj się, nie mów że jesteś botem, po prostu odpowiadaj na wiadomości."
+        )
     )
     return response.text
 
@@ -100,7 +103,6 @@ async def on_message(message):
     # Dodawanie cytatu do bazy danych, jeśli bot został wspomniany i wiadomość jest odpowiedzią na inną wiadomość
     if client.user and client.user.mentioned_in(message):
         print(f"Received mention, length: {len(message.content)}")
-        print(message)
 
         if message.reference and message.reference.message_id and message.content.strip().lower() == f'<@{client.user.id}>':
             try:
@@ -125,14 +127,11 @@ async def on_message(message):
                 await message.reply("Nie udało się pobrać wiadomości lub połączyć z bazą danych.")
                 return
         # Jeśli wiadomość nie jest odpowiedzią, ale nadal wspomina bota, generujemy odpowiedź
-        if len(message.content) > 10:
-            response = generate_content(message.content)
-            if response and response.strip():
-                await message.reply(response)
-            else:
-                await message.reply("Nie wiem co powiedzieć, zatkało mnie.")
+        response = generate_content(message.content)
+        if response and response.strip():
+            await message.reply(response)
         else:
-            await message.reply("Szkoda prądu na takie gówno")
+            await message.reply("Nie wiem co powiedzieć, zatkało mnie.")
     # Automatyczne tworzenie wątku, jeśli wiadomość została wysłana na określonych kanałach i nie jest od bota
     if message.channel.id in AUTO_THREAD_CHANNELS and not message.author.bot:
         thread_name = message.content
