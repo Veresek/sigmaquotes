@@ -98,10 +98,11 @@ async def on_message(message):
             await message.channel.send("Niestety manifest jest pusty lub nie został wczytany.")
         return
     # Dodawanie cytatu do bazy danych, jeśli bot został wspomniany i wiadomość jest odpowiedzią na inną wiadomość
-    if client.user and client.user.mentioned_in(message) and message.reference.author_id != client.user.id:
+    if client.user and client.user.mentioned_in(message):
         print(f"Received mention, length: {len(message.content)}")
+        print(message)
 
-        if message.reference and message.reference.message_id:
+        if message.reference and message.reference.message_id and message.content.strip().lower() == f'<@{client.user.id}>':
             try:
                 replied_msg = message.reference.cached_message or await message.channel.fetch_message(message.reference.message_id)
                 author_name = replied_msg.author.display_name
