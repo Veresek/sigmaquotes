@@ -101,7 +101,7 @@ async def on_message(message):
     if client.user and client.user.mentioned_in(message):
         print(f"Received mention, length: {len(message.content)}")
 
-        if message.reference and message.reference.message_id:
+        if message.reference and message.reference.message_id and message.author.id != client.user.id:
             try:
                 replied_msg = message.reference.cached_message or await message.channel.fetch_message(message.reference.message_id)
                 author_name = replied_msg.author.display_name
