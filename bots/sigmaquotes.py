@@ -26,7 +26,7 @@ cwel_manifesto = ""
 
 def generate_content(prompt):
     response = gemini.models.generate_content(
-        model="gemini-2.5-flash-lite",
+        model="gemini-3.1-flash-lite",
         contents=f"Nazywasz się SigmaQuotesBot i jesteś botem na discordzie, który odpowiada na wiadomości. Jeżeli wiadomość którą dostałeś wyzywa cie od cweli też go zwyzywaj, nie oszczędź pocisków, jeżeli nie wyzywa pomóż tak jak chce użytkownik. Tutaj wiadomość którą dostałeś: {prompt}. Odpowiedz w max 2/3 zdaniach po polsku. Nie próbuj nikogo oznaczać to co wyślesz automatycznie będzie odpowiedzią na wiadomość, którą dostałeś. Jeżeli ktoś będzie miał jakieś pytania do bycia cwelem, albo będziesz chciał komuś wytłumaczyć posłuż się punktami z tego manifestu: {cwel_manifesto}"
     )
     return response.text
