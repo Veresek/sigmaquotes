@@ -24,15 +24,77 @@ time_to_announce = datetime.time(hour=10, minute=0, second=0, microsecond=0)
 
 cwel_manifesto = ""
 
-def generate_content(prompt):
+def generate_content(message, history=None):
+    if history is None:
+        history = []
+
+    history_text = "\n".join([f"{msg['username']}: {msg['content']}" for msg in history])
+
+    contents = (
+        f"Kontekst ostatnich wiadomości (od najstarszej do najnowszej):\n{history_text}\n\n"
+        f"Odpowiedz na tę wiadomość: '{message.content}' (autor: {message.author.display_name})"
+    )
     response = gemini.models.generate_content(
         model="gemini-3.1-flash-lite-preview",
-        contents=prompt,
-        config= genai.types.GenerateContentConfig(
-            system_instruction=f"Nazywasz się SigmaQuotesBot i jesteś botem na discordzie, który odpowiada na wiadomości. Jeżeli wiadomość którą dostałeś wyzywa cie od cweli też go zwyzywaj, nie oszczędź pocisków, jeżeli nie wyzywa pomóż tak jak chce użytkownik. Odpowiedz w max 2/3 zdaniach po polsku. Nie próbuj nikogo oznaczać to co wyślesz automatycznie będzie odpowiedzią na wiadomość, którą dostałeś. Jeżeli ktoś będzie miał jakieś pytania do bycia cwelem, albo będziesz chciał komuś wytłumaczyć posłuż się punktami z tego manifestu: {cwel_manifesto}. Nie przedstawiaj się, nie mów że jesteś botem, po prostu odpowiadaj na wiadomości."
+        contents=contents,
+        config=genai.types.GenerateContentConfig(
+            system_instruction=(
+                "Nazywasz się SigmaQuotesBot i jesteś botem na discordzie, który odpowiada na wiadomości. "
+                "Jeżeli wiadomość którą dostałeś wyzywa cię od cweli też go zwyzywaj, nie oszczędź pocisków, "
+                "jeżeli nie wyzywa pomóż tak jak chce użytkownik. "
+                "Odpowiedz w max 2/3 zdaniach po polsku. "
+                "Nie próbuj nikogo oznaczać — to co wyślesz automatycznie będzie odpowiedzią na wiadomość którą dostałeś. "
+                "Nie przedstawiaj się, nie mów że jesteś botem, po prostu odpowiadaj na wiadomości.\n\n"
+                "<charakter>\n"
+                f"{cwel_manifesto}\n"
+                "</charakter>\n\n"
+                "Powyższy manifest to Twój charakter i sposób bycia — czujesz go naturalnie, ale NIE cytujesz go, "
+                "NIE odwołujesz się do niego z nazwy i NIE analizujesz go. "
+                "Używasz go tylko gdy ktoś bezpośrednio pyta o bycie cwelem lub o zasady."
+            )
         )
     )
     return response.text
+
+async def scrape_channel_history(channel, limit=10):
+    history = []
+    async for msg in channel.history(limit=limit, oldest_first=True):
+        if msg.type != discord.MessageType.default:
+            continue
+
+        content = msg.content.strip()
+        if not content:
+            continue
+
+        history.append({
+            "username": msg.author.display_name,
+            "content": content,
+        })
+
+    return history
+
+async def add_quote_to_database(message):
+    try:
+        replied_msg = message.reference.cached_message or await message.channel.fetch_message(message.reference.message_id)
+        author_name = replied_msg.author.display_name
+        quote_content = replied_msg.content
+
+        if not quote_content.strip():
+            await message.reply("Gościuuu ta wiadomość jest pusta, pewnie tylko obrazek.")
+            return
+
+        backend_url = os.getenv('BACKEND_URL', 'http://127.0.0.1:8000/quotes')
+        async with aiohttp.ClientSession() as session:
+            async with session.post(backend_url, json={"author": author_name, "content": quote_content}) as resp:
+                if resp.status in (200, 201):
+                    await message.reply(f"🗿 Dodano cytat\n**Autor:** {author_name}")
+                else:
+                    await message.reply(f"Niepowodzenie, backend zwrócił błąd: {resp.status}")
+        return
+    except Exception as e:
+        print(f"Error during quote saving: {e}")
+        await message.reply("Nie udało się pobrać wiadomości lub połączyć z bazą danych.")
+        return
 
 def is_last_day_of_month():
     today = datetime.date.today()
@@ -44,7 +106,6 @@ async def cwel_manifesto_scraper():
         print("Error: CWEL_MANIFESTO_ID is not set in .env")
         return
         
-
     channel = client.get_channel(CWEL_MANIFESTO_ID)
 
     if not isinstance(channel, discord.TextChannel):
@@ -94,44 +155,24 @@ async def on_message(message):
     if message.channel.id == CWEL_MANIFESTO_ID:
         await cwel_manifesto_scraper()
 
-    if "zasady serwera" in message.content.lower():
-        if cwel_manifesto:
-            await message.channel.send(cwel_manifesto)
-        else:
-            await message.channel.send("Niestety manifest jest pusty lub nie został wczytany.")
-        return
     # Dodawanie cytatu do bazy danych, jeśli bot został wspomniany i wiadomość jest odpowiedzią na inną wiadomość
     if client.user and client.user.mentioned_in(message):
         print(f"Received mention, length: {len(message.content)}")
 
         if message.reference and message.reference.message_id and message.content.strip().lower() == f'<@{client.user.id}>':
-            try:
-                replied_msg = message.reference.cached_message or await message.channel.fetch_message(message.reference.message_id)
-                author_name = replied_msg.author.display_name
-                quote_content = replied_msg.content
-
-                if not quote_content.strip():
-                    await message.reply("Gościuuu ta wiadomość jest pusta, pewnie tylko obrazek.")
-                    return
-
-                backend_url = os.getenv('BACKEND_URL', 'http://127.0.0.1:8000/quotes')
-                async with aiohttp.ClientSession() as session:
-                    async with session.post(backend_url, json={"author": author_name, "content": quote_content}) as resp:
-                        if resp.status in (200, 201):
-                            await message.reply(f"🗿 Dodano cytat\n**Autor:** {author_name}")
-                        else:
-                            await message.reply(f"Niepowodzenie, backend zwrócił błąd: {resp.status}")
-                return
-            except Exception as e:
-                print(f"Error during quote saving: {e}")
-                await message.reply("Nie udało się pobrać wiadomości lub połączyć z bazą danych.")
-                return
+            await add_quote_to_database(message)
+            return
         # Jeśli wiadomość nie jest odpowiedzią, ale nadal wspomina bota, generujemy odpowiedź
-        response = generate_content(message.content)
-        if response and response.strip():
-            await message.reply(response)
-        else:
-            await message.reply("Nie wiem co powiedzieć, zatkało mnie.")
+        history = await scrape_channel_history(message.channel, limit=10)
+        try:
+            response = generate_content(message, history=history)
+            if response and response.strip():
+                await message.reply(response)
+            else:
+                await message.reply("Nie wiem co powiedzieć, zatkało mnie.")
+        except Exception as e:
+            print(f"Error generating content: {e}")
+            await message.reply("Wystąpił błąd podczas generowania odpowiedzi.")
     # Automatyczne tworzenie wątku, jeśli wiadomość została wysłana na określonych kanałach i nie jest od bota
     if message.channel.id in AUTO_THREAD_CHANNELS and not message.author.bot:
         thread_name = message.content
