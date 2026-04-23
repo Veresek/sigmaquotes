@@ -1,10 +1,10 @@
 import discord
-import aiohttp
 from google import genai
 from dotenv import load_dotenv
 import os
 from discord.ext import tasks
 import datetime
+from manifest_cwela import cwel_manifesto_scraper, add_quote_to_database
 
 load_dotenv()
 
@@ -73,76 +73,37 @@ async def scrape_channel_history(channel, limit=10):
 
     return history
 
-async def add_quote_to_database(message):
-    try:
-        replied_msg = message.reference.cached_message or await message.channel.fetch_message(message.reference.message_id)
-        author_name = replied_msg.author.display_name
-        quote_content = replied_msg.content
-
-        if not quote_content.strip():
-            await message.reply("Gościuuu ta wiadomość jest pusta, pewnie tylko obrazek.")
-            return
-
-        backend_url = os.getenv('BACKEND_URL', 'http://127.0.0.1:8000/quotes')
-        async with aiohttp.ClientSession() as session:
-            async with session.post(backend_url, json={"author": author_name, "content": quote_content}) as resp:
-                if resp.status in (200, 201):
-                    await message.reply(f"🗿 Dodano cytat\n**Autor:** {author_name}")
-                else:
-                    await message.reply(f"Niepowodzenie, backend zwrócił błąd: {resp.status}")
-        return
-    except Exception as e:
-        print(f"Error during quote saving: {e}")
-        await message.reply("Nie udało się pobrać wiadomości lub połączyć z bazą danych.")
-        return
 
 def is_last_day_of_month():
     today = datetime.date.today()
     next_day = today.replace(day=today.day + 1)
     return next_day.month != today.month
 
-async def cwel_manifesto_scraper():
-    if CWEL_MANIFESTO_ID is None:
-        print("Error: CWEL_MANIFESTO_ID is not set in .env")
-        return
-        
-    channel = client.get_channel(CWEL_MANIFESTO_ID)
 
-    if not isinstance(channel, discord.TextChannel):
-        print(f"Error: Channel {CWEL_MANIFESTO_ID} is not a text channel or was not found.")
-        return
-
-    global cwel_manifesto
-    content = ""
-
-    async for message in channel.history(limit=None, oldest_first=True):
-        if message.type != discord.MessageType.default:
-            continue
-        content += message.content + "\n"
-    
-    cwel_manifesto = content.strip()
-    if not cwel_manifesto:
-        print(f"Warning: Scraped manifesto from channel {CWEL_MANIFESTO_ID} is empty")
-
-    base_url = os.getenv('BACKEND_URL', 'http://127.0.0.1:8000/quotes')
-    backend_url = base_url.replace('/quotes', '/manifesto')
-    if '/manifesto' not in backend_url:
-        backend_url = f"{base_url.rstrip('/')}/manifesto"
-
+async def respond_to_message(message):
+    history = await scrape_channel_history(message.channel, limit=10)
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(backend_url, json={"content": cwel_manifesto}) as resp:
-                if resp.status in (200, 201):
-                    print("Manifest updated in database.")
-                else:
-                    print(f"Failed to update manifest in database: {resp.status}")
+        response = generate_content(message, history=history)
+        if response and response.strip():
+            await message.reply(response)
+        else:
+            await message.reply("Nie wiem co powiedzieć, zatkało mnie.")
     except Exception as e:
-        print(f"Error during manifest update: {e}")
+        print(f"Error generating content: {e}")
+        await message.reply("Wystąpił błąd podczas generowania odpowiedzi.")
+
+async def create_thread(message):
+    thread_name = message.content
+    try:
+        await message.create_thread(name=thread_name)
+
+    except Exception as e:
+        print(f"Error creating thread: {e}")
 
 @client.event
 async def on_ready():
     print(f'Logged in as {client.user}')
-    await cwel_manifesto_scraper()
+    await cwel_manifesto_scraper(client, CWEL_MANIFESTO_ID)
     print("Manifest loaded successfully")
     if not announce_balance.is_running():
         announce_balance.start()
@@ -153,7 +114,7 @@ async def on_message(message):
         return
 
     if message.channel.id == CWEL_MANIFESTO_ID:
-        await cwel_manifesto_scraper()
+        await cwel_manifesto_scraper(client, CWEL_MANIFESTO_ID)
 
     # Dodawanie cytatu do bazy danych, jeśli bot został wspomniany i wiadomość jest odpowiedzią na inną wiadomość
     if client.user and client.user.mentioned_in(message):
@@ -163,35 +124,23 @@ async def on_message(message):
             await add_quote_to_database(message)
             return
         # Jeśli wiadomość nie jest odpowiedzią, ale nadal wspomina bota, generujemy odpowiedź
-        history = await scrape_channel_history(message.channel, limit=10)
-        try:
-            response = generate_content(message, history=history)
-            if response and response.strip():
-                await message.reply(response)
-            else:
-                await message.reply("Nie wiem co powiedzieć, zatkało mnie.")
-        except Exception as e:
-            print(f"Error generating content: {e}")
-            await message.reply("Wystąpił błąd podczas generowania odpowiedzi.")
+        await respond_to_message(message)
+        return
     # Automatyczne tworzenie wątku, jeśli wiadomość została wysłana na określonych kanałach i nie jest od bota
     if message.channel.id in AUTO_THREAD_CHANNELS and not message.author.bot:
-        thread_name = message.content
-        try:
-            await message.create_thread(name=thread_name)
-
-        except Exception as e:
-            print(f"Error creating thread: {e}")
+        await create_thread(message)
+        
 @client.event
 async def on_message_edit(before, after):
     # Aktualizuj manifest, jeśli wiadomość została edytowana w kanale manifestu
     if after.channel.id == CWEL_MANIFESTO_ID:
-        await cwel_manifesto_scraper()
+        await cwel_manifesto_scraper(client, CWEL_MANIFESTO_ID)
 
 @client.event
 async def on_message_delete(message):
     # Aktualizuj manifest, jeśli wiadomość została usunięta w kanale manifestu
     if message.channel.id == CWEL_MANIFESTO_ID:
-        await cwel_manifesto_scraper()
+        await cwel_manifesto_scraper(client, CWEL_MANIFESTO_ID)
 
 @tasks.loop(time=time_to_announce)
 async def announce_balance():
