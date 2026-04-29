@@ -46,7 +46,6 @@ DATABASE_URL="postgresql://root:haslo@localhost:5432/sigmaquotes?schema=public"
 ```env
 SIGMA_TOKEN=twoj_token_bota_discord
 GEMINI_API_KEY=twoje_api_od_google
-CWEL_MANIFESTO_ID=id_kanalu_discord
 ```
 
 ### 3. Aplikacje (Backend + DB + Frontend)

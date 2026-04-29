@@ -1,4 +1,3 @@
-import os
 import aiohttp
 import discord
 
@@ -8,7 +7,7 @@ async def cwel_manifesto_scraper(client: discord.Client, manifesto_channel_id: i
     Zwraca złożoną treść manifestu jako tekst (str).
     """
     if not manifesto_channel_id:
-        print("Error: CWEL_MANIFESTO_ID is not provided.")
+        print("Error: CWEL_MANIFESTO_CHANNEL_ID is not provided.")
         return None
         
     channel = client.get_channel(manifesto_channel_id)
@@ -78,3 +77,60 @@ async def add_quote_to_database(message: discord.Message):
     except Exception as e:
         print(f"Error during quote saving: {e}")
         await message.reply("Wystąpił błąd – nie udało się pobrać wiadomości lub połączyć z bazą danych.")
+
+async def get_random_daily_challenge():
+    backend_url = 'http://127.0.0.1:8000/daily-challenge'
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(backend_url) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    return data.get("content", "Brak treści wyzwania.")
+                else:
+                    print(f"Failed to fetch daily challenge: {resp.status} - {await resp.text()}")
+                    return "Nie udało się pobrać wyzwania."
+    except Exception as e:
+        print(f"Error fetching daily challenge: {e}")
+        return "Wystąpił błąd podczas pobierania wyzwania."
+
+async def get_random_quote():
+    return {"author": "Test Author", "content": "This is a test quote."}
+
+async def get_active_challenges():
+    backend_url = 'http://127.0.0.1:8000/active-challenges'
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(backend_url) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    return data
+                else:
+                    print(f"Failed to fetch active challenges: {resp.status} - {await resp.text()}")
+                    return []
+    except Exception as e:
+        print(f"Error fetching active challenges: {e}")
+        return []
+
+async def add_challenge_to_database(challenge):
+    backend_url = 'http://127.0.0.1:8000/challenge'
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(backend_url, json=challenge) as resp:
+                if resp.status in (200, 201):
+                    print("Challenge added to database.")
+                else:
+                    print(f"Failed to add challenge to database: {resp.status} - {await resp.text()}")
+    except Exception as e:
+        print(f"Error adding challenge to database: {e}")
+
+async def add_daily_challenge_to_database(challenge):
+    backend_url = 'http://127.0.0.1:8000/daily-challenge'
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(backend_url, json=challenge) as resp:
+                if resp.status in (200, 201):
+                    print("Daily challenge added to database.")
+                else:
+                    print(f"Failed to add daily challenge to database: {resp.status} - {await resp.text()}")
+    except Exception as e:
+        print(f"Error adding daily challenge to database: {e}")

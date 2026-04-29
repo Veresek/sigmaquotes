@@ -19,3 +19,16 @@ model manifest {
   content    String
   created_at DateTime? @default(now()) @db.Timestamp(6)
 }
+
+model active_challenges {
+  id        Int       @id @default(autoincrement())
+  content   String
+  author    String    @db.VarChar(100)
+  start_at DateTime? @default(now()) @db.Timestamp(6)
+  end_at   DateTime? @default(now()) @db.Timestamp(6)
+}
+
+model daily_challenges {
+  id        Int       @id @default(autoincrement())
+  content   String
+}
