@@ -127,7 +127,7 @@ async def add_daily_challenge_to_database(challenge):
     backend_url = 'http://127.0.0.1:8000/daily-challenge'
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.post(backend_url, json=challenge) as resp:
+            async with session.post(backend_url, json={"content": challenge}) as resp:
                 if resp.status in (200, 201):
                     print("Daily challenge added to database.")
                 else:

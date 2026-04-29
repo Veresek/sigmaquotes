@@ -139,13 +139,13 @@ class SigmaQuotesBot(discord.Client):
         if message.content.strip().lower().startswith("!komendy"):
             commands_text = (
                 "Dostępne komendy:\n"
-                "- Odpowiedz na wiadomość z treścią `@SigmaQuotesBot` aby dodać ją jako cytat do bazy danych.\n"
+                "- Odpowiedz na wiadomość z treścią `@SigmaQuotes` aby dodać ją jako cytat do bazy danych.\n"
                 "- !daily - dodaje dzienny challenge do bazy danych (tresc 1:1 zapisana w bazie)\n"
                 "- !challenge - dodaje challange do bazy danych (trzeba podac tresc, date zakonczenia oraz opcjonalnie date rozpoczecia)\n"
             )
             await message.reply(commands_text)
             return
-        if message.content.strip().lower() == "!daily":
+        if message.content.strip().lower().startswith("!daily"):
             try:
                 daily_content = message.content.strip()[len("!daily"):].strip()
                 if not daily_content:
