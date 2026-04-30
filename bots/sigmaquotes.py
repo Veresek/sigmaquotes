@@ -43,6 +43,7 @@ class SigmaQuotesBot(discord.Client):
     async def setup_hook(self):
         # Inicjalizacja zadania w tle
         self.announce_balance.start()
+        self.daily_challenge.start()
 
     async def on_ready(self):
         print(f'Logged in as {self.user} (ID: {self.user.id})')

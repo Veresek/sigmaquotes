@@ -32,7 +32,7 @@ cd sigmaquotes
 
 Musisz utworzyć odpowiednie pliki `.env`:
 
-**W głównym folderze (`./.env`)** - dla Docker Compose i backendu:
+**W folderze backendu (`./backend/.env`)** - dla Docker Compose i backendu:
 
 ```env
 DB_USER=root
@@ -50,10 +50,10 @@ GEMINI_API_KEY=twoje_api_od_google
 
 ### 3. Aplikacje (Backend + DB + Frontend)
 
-Uruchom kontenery Dockera:
+Aby poprawnie przekazać zmienne do bazy danych oraz backendu (bez symlinków i błędów z hasłami), uruchom kontenery używając specjalnej flagi `--env-file`:
 
 ```bash
-docker compose up -d --build
+docker compose --env-file backend/.env up -d --build
 ```
 
 ### 4. Uruchomienie Bota
