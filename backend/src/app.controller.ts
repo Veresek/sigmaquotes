@@ -15,9 +15,9 @@ export class AppController {
     return this.appService.getQuotes();
   }
 
-  @Get('quote')
-  async getQuote(@Body() body: { id: number }) {
-    return this.appService.getQuote(body.id);
+  @Get('random-quote')
+  async getRandomQuote() {
+    return this.appService.getRandomQuote();
   }
 
   @Get('manifesto')

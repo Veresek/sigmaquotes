@@ -265,7 +265,7 @@ class SigmaQuotesBot(discord.Client):
             print(f"Error fetching active challenges: {e}")
             active_challenges_text = "Nie udało się pobrać aktywnych wyzwań."
         try:
-            quote: Dict[str, str] = await get_random_quote()
+            quote = await get_random_quote()
         except Exception as e:
             print(f"Error fetching random quote: {e}")
             quote = {"author": "Nieznany", "content": "Nie udało się pobrać cytatu."}

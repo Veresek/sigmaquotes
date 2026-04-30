@@ -11,12 +11,11 @@ export class AppService {
     return await prisma.quotes.findMany();
   }
 
-  async getQuote(id: number) {
-    return await prisma.quotes.findUnique({
-      where: {
-        id,
-      },
-    });
+  async getRandomQuote() {
+    const quote = await prisma.$queryRaw<
+      any[]
+    >`SELECT * FROM "quotes" ORDER BY RANDOM() LIMIT 1`;
+    return quote[0] || { content: '', author: '' };
   }
 
   async getManifesto() {

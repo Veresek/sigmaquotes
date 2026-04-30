@@ -94,8 +94,19 @@ async def get_random_daily_challenge():
         return "Wystąpił błąd podczas pobierania wyzwania."
 
 async def get_random_quote():
-    return {"author": "Test Author", "content": "This is a test quote."}
-
+    backend_url = 'http://127.0.0.1:8000/random-quote'
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(backend_url) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    return {"author": data.get("author", "Nieznany"), "content": data.get("content", "Brak treści cytatu.")}
+                else:
+                    print(f"Failed to fetch random quote: {resp.status} - {await resp.text()}")
+                    return {"author": "Nieznany", "content": "Nie udało się pobrać cytatu."}
+    except Exception as e:
+        print(f"Error fetching random quote: {e}")
+        return {"author": "Nieznany", "content": "Wystąpił błąd podczas pobierania cytatu."}
 async def get_active_challenges():
     backend_url = 'http://127.0.0.1:8000/active-challenges'
     try:
