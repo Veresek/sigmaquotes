@@ -16,7 +16,8 @@ Projekt został podzielony na trzy główne moduły (monorepo):
 
 * **Backend:** Node.js 24, NestJS, Prisma, PostgreSQL
 
-- **Frontend:** React, TypeScript, Vite, TailwindCSS (opcjonalnie)
+- **Frontend:** React, TypeScript, Vite, TailwindCSS
+
 - **Deployment:** Docker Compose, PM2, GitHub Actions (CI/CD)
 
 ## 🛠️ Uruchomienie lokalne
