@@ -1,7 +1,7 @@
 import aiohttp
 import discord
 
-async def cwel_manifesto_scraper(client: discord.Client, manifesto_channel_id: int) -> str | None:
+async def cwel_manifesto_scraper(client: discord.Client, manifesto_channel_id: int, session: aiohttp.ClientSession) -> str | None:
     """
     Pobiera wszystkie wiadomości z kanału manifestu i wysyła je do backendu.
     Zwraca złożoną treść manifestu jako tekst (str).
@@ -32,18 +32,17 @@ async def cwel_manifesto_scraper(client: discord.Client, manifesto_channel_id: i
     backend_url = 'http://127.0.0.1:8000/manifesto'
 
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(backend_url, json={"content": cwel_manifesto}) as resp:
-                if resp.status in (200, 201):
-                    print("Manifest updated in database.")
-                else:
-                    print(f"Failed to update manifest in database: {resp.status} - {await resp.text()}")
+        async with session.post(backend_url, json={"content": cwel_manifesto}) as resp:
+            if resp.status in (200, 201):
+                print("Manifest updated in database.")
+            else:
+                print(f"Failed to update manifest in database: {resp.status} - {await resp.text()}")
     except Exception as e:
         print(f"Error during manifest update: {e}")
         
     return cwel_manifesto
     
-async def add_quote_to_database(message: discord.Message):
+async def add_quote_to_database(message: discord.Message, session: aiohttp.ClientSession):
     """
     Pobiera wiadomość, na którą odpowiedziano oznaczając bota, i zapisuje ją w backendzie jako cytat.
     """
@@ -63,14 +62,13 @@ async def add_quote_to_database(message: discord.Message):
 
         backend_url = 'http://127.0.0.1:8000/quotes'
         
-        async with aiohttp.ClientSession() as session:
-            async with session.post(backend_url, json={"author": author_name, "content": quote_content}) as resp:
-                if resp.status in (200, 201):
-                    await message.reply(f"🗿 Dodano cytat\n**Autor:** {author_name}")
-                else:
-                    error_text = await resp.text()
-                    await message.reply(f"Niepowodzenie, backend zwrócił błąd: {resp.status}")
-                    print(f"Failed to add quote to database: {resp.status} - {error_text}")
+        async with session.post(backend_url, json={"author": author_name, "content": quote_content}) as resp:
+            if resp.status in (200, 201):
+                await message.reply(f"🗿 Dodano cytat\n**Autor:** {author_name}")
+            else:
+                error_text = await resp.text()
+                await message.reply(f"Niepowodzenie, backend zwrócił błąd: {resp.status}")
+                print(f"Failed to add quote to database: {resp.status} - {error_text}")
                     
     except discord.NotFound:
         await message.reply("Nie udało się znaleźć wiadomości bazowej (może została usunięta).")
@@ -78,70 +76,66 @@ async def add_quote_to_database(message: discord.Message):
         print(f"Error during quote saving: {e}")
         await message.reply("Wystąpił błąd – nie udało się pobrać wiadomości lub połączyć z bazą danych.")
 
-async def get_random_daily_challenge():
+async def get_random_daily_challenge(session: aiohttp.ClientSession):
     backend_url = 'http://127.0.0.1:8000/daily-challenge'
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(backend_url) as resp:
-                if resp.status == 200:
-                    data = await resp.json()
-                    return data.get("content", "Brak treści wyzwania.")
-                else:
-                    print(f"Failed to fetch daily challenge: {resp.status} - {await resp.text()}")
-                    return "Nie udało się pobrać wyzwania."
+        async with session.get(backend_url) as resp:
+            if resp.status == 200:
+                data = await resp.json()
+                return data.get("content", "Brak treści wyzwania.")
+            else:
+                print(f"Failed to fetch daily challenge: {resp.status} - {await resp.text()}")
+                return "Nie udało się pobrać wyzwania."
     except Exception as e:
         print(f"Error fetching daily challenge: {e}")
         return "Wystąpił błąd podczas pobierania wyzwania."
 
-async def get_random_quote():
+async def get_random_quote(session: aiohttp.ClientSession):
     backend_url = 'http://127.0.0.1:8000/random-quote'
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(backend_url) as resp:
-                if resp.status == 200:
-                    data = await resp.json()
-                    return {"author": data.get("author", "Nieznany"), "content": data.get("content", "Brak treści cytatu.")}
-                else:
-                    print(f"Failed to fetch random quote: {resp.status} - {await resp.text()}")
-                    return {"author": "Nieznany", "content": "Nie udało się pobrać cytatu."}
+        async with session.get(backend_url) as resp:
+            if resp.status == 200:
+                data = await resp.json()
+                return {"author": data.get("author", "Nieznany"), "content": data.get("content", "Brak treści cytatu.")}
+            else:
+                print(f"Failed to fetch random quote: {resp.status} - {await resp.text()}")
+                return {"author": "Nieznany", "content": "Nie udało się pobrać cytatu."}
     except Exception as e:
         print(f"Error fetching random quote: {e}")
         return {"author": "Nieznany", "content": "Wystąpił błąd podczas pobierania cytatu."}
-async def get_active_challenges():
+
+async def get_active_challenges(session: aiohttp.ClientSession):
     backend_url = 'http://127.0.0.1:8000/active-challenges'
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(backend_url) as resp:
-                if resp.status == 200:
-                    data = await resp.json()
-                    return data
-                else:
-                    print(f"Failed to fetch active challenges: {resp.status} - {await resp.text()}")
-                    return []
+        async with session.get(backend_url) as resp:
+            if resp.status == 200:
+                data = await resp.json()
+                return data
+            else:
+                print(f"Failed to fetch active challenges: {resp.status} - {await resp.text()}")
+                return []
     except Exception as e:
         print(f"Error fetching active challenges: {e}")
         return []
 
-async def add_challenge_to_database(challenge):
+async def add_challenge_to_database(challenge: dict, session: aiohttp.ClientSession):
     backend_url = 'http://127.0.0.1:8000/challenge'
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(backend_url, json=challenge) as resp:
-                if resp.status in (200, 201):
-                    print("Challenge added to database.")
-                else:
-                    print(f"Failed to add challenge to database: {resp.status} - {await resp.text()}")
+        async with session.post(backend_url, json=challenge) as resp:
+            if resp.status in (200, 201):
+                print("Challenge added to database.")
+            else:
+                print(f"Failed to add challenge to database: {resp.status} - {await resp.text()}")
     except Exception as e:
         print(f"Error adding challenge to database: {e}")
 
-async def add_daily_challenge_to_database(challenge):
+async def add_daily_challenge_to_database(challenge: str, session: aiohttp.ClientSession):
     backend_url = 'http://127.0.0.1:8000/daily-challenge'
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(backend_url, json={"content": challenge}) as resp:
-                if resp.status in (200, 201):
-                    print("Daily challenge added to database.")
-                else:
-                    print(f"Failed to add daily challenge to database: {resp.status} - {await resp.text()}")
+        async with session.post(backend_url, json={"content": challenge}) as resp:
+            if resp.status in (200, 201):
+                print("Daily challenge added to database.")
+            else:
+                print(f"Failed to add daily challenge to database: {resp.status} - {await resp.text()}")
     except Exception as e:
         print(f"Error adding daily challenge to database: {e}")

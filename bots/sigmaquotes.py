@@ -3,11 +3,20 @@ import datetime
 import asyncio
 import json
 import discord
+import aiohttp
 from discord.ext import tasks
 from google import genai
 from dotenv import load_dotenv
 from zoneinfo import ZoneInfo
-from api_services import cwel_manifesto_scraper, add_quote_to_database, get_random_quote, get_random_daily_challenge, get_active_challenges, add_challenge_to_database, add_daily_challenge_to_database
+from api_services import (
+    cwel_manifesto_scraper, 
+    add_quote_to_database, 
+    get_random_quote, 
+    get_random_daily_challenge, 
+    get_active_challenges, 
+    add_challenge_to_database, 
+    add_daily_challenge_to_database
+)
 
 # Wczytywanie z .env
 load_dotenv()
@@ -23,6 +32,9 @@ AUTO_THREAD_CHANNELS = config.get("auto_thread_channels", [])
 BALANCE_ANNOUNCE_CHANNEL_ID = config.get("balance_announce_channel_id")
 CWEL_MANIFESTO_CHANNEL_ID = config.get("cwel_manifesto_channel_id")
 DAILY_CHALLENGE_CHANNEL_ID = config.get("daily_challenge_channel_id")
+CHALLENGE_CHANNEL_ID = config.get("challenge_channel_id")
+LOGS_CHANNEL_ID = config.get("logs_channel_id")
+
 USERS_TO_PING = config.get("users_to_ping", {})
 minio_id = USERS_TO_PING.get("minio", "339884510089052160")
 veresek_id = USERS_TO_PING.get("veresek", "986324349067874326")
@@ -38,11 +50,19 @@ class SigmaQuotesBot(discord.Client):
         
         self.gemini = genai.Client(api_key=GEMINI_API_KEY)
         self.cwel_manifesto = ""
+        self.session = None
 
     async def setup_hook(self):
-        # Inicjalizacja zadania w tle
+        # Inicjalizacja zadań w tle i sesji HTTP
+        self.session = aiohttp.ClientSession()
         self.announce_balance.start()
         self.daily_challenge.start()
+
+    async def close(self):
+        # Zamknięcie sesji HTTP gdy bot jest zamykany
+        if self.session:
+            await self.session.close()
+        await super().close()
 
     async def on_ready(self):
         print(f'Logged in as {self.user} (ID: {self.user.id})')
@@ -50,14 +70,42 @@ class SigmaQuotesBot(discord.Client):
         print("Manifest loaded successfully")
 
     async def update_manifest(self):
-        # Pobieranie i aktualizacja manifestu z kanału
-        new_manifesto = await cwel_manifesto_scraper(self, CWEL_MANIFESTO_CHANNEL_ID)
+        """Pobieranie i aktualizacja manifestu z dedykowanego kanału."""
+        new_manifesto = await cwel_manifesto_scraper(self, CWEL_MANIFESTO_CHANNEL_ID, self.session)
         if new_manifesto:
             self.cwel_manifesto = new_manifesto
 
-    # Logika odpowiedzi (Gemini)
+    # === Logika LLM (Gemini) ===
+    
+    async def _call_gemini(self, prompt: str, system_instruction: str = None, json_mode: bool = False, max_retries: int = 3, base_delay: int = 2) -> str:
+        """Centralna metoda do asynchronicznego wywoływania API Gemini z mechanizmem retry."""
+        def generate():
+            kwargs = {}
+            if system_instruction:
+                kwargs['system_instruction'] = system_instruction
+            if json_mode:
+                kwargs['response_mime_type'] = "application/json"
+                
+            return self.gemini.models.generate_content(
+                model="gemini-3.1-flash-lite-preview",
+                contents=prompt,
+                config=genai.types.GenerateContentConfig(**kwargs)
+            )
+
+        for attempt in range(max_retries):
+            try:
+                response = await asyncio.to_thread(generate)
+                return response.text
+            except Exception as e:
+                if attempt == max_retries - 1:
+                    print(f"Błąd krytyczny API Gemini po {max_retries} próbach: {e}")
+                    raise
+                delay = base_delay * (2 ** attempt)
+                print(f"Błąd API Gemini ({e}). Ponawiam (próba {attempt + 1}/{max_retries}) za {delay} sekund...")
+                await asyncio.sleep(delay)
+
     async def generate_content_async(self, message: discord.Message, history: list) -> str:
-        """Generuje odpowiedź od modelu w osobnym wątku, żeby nie blokować event loopa"""
+        """Generuje odpowiedź konwersacyjną (czat)."""
         history_text = "\n".join([f"{msg['username']}: {msg['content']}" for msg in history])
 
         contents = (
@@ -79,18 +127,46 @@ class SigmaQuotesBot(discord.Client):
             "Motywuj do rozwijania się i bycia lepszym, ale nie bądź nachalny. "
         )
 
-        # Uruchamiamy synchroniczną funkcję genai w oddzielnym wątku
-        def generate():
-            return self.gemini.models.generate_content(
-                model="gemini-3.1-flash-lite-preview",
-                contents=contents,
-                config=genai.types.GenerateContentConfig(
-                    system_instruction=system_instruction
-                )
-            )
+        return await self._call_gemini(contents, system_instruction=system_instruction)
 
-        response = await asyncio.to_thread(generate)
-        return response.text
+    async def validate_daily_challenge_content(self, content: str) -> dict:
+        """Walidacja dziennego wyzwania z użyciem LLM."""
+        prompt = (
+            f"Oceń czy poniższa wiadomość jest sensownym wyzwaniem/zadaniem dziennym do wykonania, "
+            f"czy raczej bezsensownym spamem, wiadomością która nie jest zadaniem, lub czymś nierealnym.\n"
+            f"Wiadomość: {content}\n\n"
+            f"Zwróć sam czysty obiekt JSON (bez znaczników markdown) zawierający klucze:\n"
+            f"- \"is_valid\" (boolean): true jeśli to sensowne wyzwanie, false w przeciwnym razie.\n"
+            f"- \"reason\" (string): krótkie uzasadnienie decyzji po polsku."
+        )
+        response_text = await self._call_gemini(prompt, json_mode=True)
+        return json.loads(response_text)
+
+    async def parse_challenge_content(self, content: str, author_name: str) -> dict:
+        """Parsowanie i walidacja standardowego wyzwania przy pomocy LLM."""
+        now_iso = datetime.datetime.now(ZoneInfo("Europe/Warsaw")).isoformat()
+        prompt = (
+            f"Przeanalizuj wyzwanie opisane w wiadomości wejściowej i wyodrębnij z niego kluczowe informacje.\n"
+            f"Aktualna data i czas w tej strefie: {now_iso}\n"
+            f"Wiadomość wejściowa: {content}\n\n"
+            f"Zwróć sam czysty obiekt JSON (bez znaczników markdown, bez dodatkowego tekstu) zawierający klucze:\n"
+            f"- \"content\" (string): Treść i opis wyzwania.\n"
+            f"- \"author\" (string): Autor lub osoba na którą rzucono wyzwanie. Jeśli nie jest jasno powiedziane, przypisz domyślnie: '{author_name}'.\n"
+            f"- \"start_at\" (string lub null): Data i czas rozpoczęcia wyzwania (w formacie ISO 8601, np. 2026-05-02T10:00:00Z). Zgadnij z kontekstu, jeśli nie ma i rzuć null.\n"
+            f"- \"end_at\" (string lub null): Data i czas zakończenia wyzwania (w formacie ISO 8601, np. 2026-05-05T23:59:59Z). Zgadnij z kontekstu (np. do jutra, do piątku), jeśli wpisano ogólnikowo lub jeśli w ogóle nie ma, rzuć null.\n"
+            f"- \"is_sensible\" (boolean): true jeśli wiadomość opisuje sensowne, logiczne zadanie/wyzwanie. false jeśli to spam, głupota, lub brak logicznego zadania.\n"
+            f"- \"reason\" (string): krótkie uzasadnienie decyzji dla is_sensible po polsku.\n"
+        )
+        response_text = await self._call_gemini(prompt, json_mode=True)
+        return json.loads(response_text)
+
+    # === Helpers ===
+    
+    async def _log_action(self, text: str):
+        """Wysyła wiadomość do kanału logów (jeśli istnieje)."""
+        logs_channel = self.get_channel(LOGS_CHANNEL_ID)
+        if logs_channel:
+            await logs_channel.send(text)
 
     async def scrape_channel_history(self, channel: discord.abc.Messageable, limit=10) -> list:
         history = []
@@ -106,7 +182,88 @@ class SigmaQuotesBot(discord.Client):
             })
         return history
 
-    async def respond_to_message(self, message: discord.Message):
+    async def create_thread(self, message: discord.Message):
+        try:
+            await message.create_thread(name=message.content[:100])
+        except Exception as e:
+            print(f"Error creating thread: {e}")
+
+    # === Handlers ===
+    
+    async def handle_daily_challenge(self, message: discord.Message):
+        try:
+            daily_content = message.content.strip()
+            if not daily_content:
+                await message.delete()
+                await self._log_action(f"{message.author.mention} Musisz podać treść dziennego challange'a, nie może być to obrazek.")
+                return
+            
+            validation_data = await self.validate_daily_challenge_content(daily_content)
+            
+            if not validation_data.get("is_valid"):
+                await message.delete()
+                await self._log_action(f"{message.author.mention} Odrzucono dzienny challenge. Uzasadnienie: {validation_data.get('reason', 'To nie wygląda na sensowne zadanie.')}")
+                return
+
+            await add_daily_challenge_to_database(daily_content, self.session)
+            await self._log_action(f"Dzienny challange został dodany do bazy danych przez {message.author.mention}:\n> {daily_content}")
+        except Exception as e:
+            print(f"Error adding daily challenge: {e}")
+            await self._log_action("Wystąpił błąd podczas dodawania dziennego challange'a.")
+
+    async def handle_challenge(self, message: discord.Message):
+        try:
+            challenge_content = message.content.strip()
+            if not challenge_content:
+                await message.delete()
+                await self._log_action(f"{message.author.mention} Nie wysyłaj tu obrazków ani nie odpowiadaj na wiadomości, od tego masz thready.")
+                return
+            
+            challenge_data = await self.parse_challenge_content(challenge_content, message.author.display_name)
+
+            if not challenge_data.get("is_sensible"):
+                await message.delete()
+                await self._log_action(f"{message.author.mention} Odrzucono wyzwanie. Uzasadnienie: {challenge_data.get('reason', 'To nie jest sensowne wyzwanie.')}")
+                return
+            if not challenge_data.get("end_at"):
+                await message.delete()
+                await self._log_action(f"{message.author.mention} Odrzucono wyzwanie. Musisz podać do kiedy trwa to wyzwanie (np. 'do jutra', 'do piątku', podać konkretną datę).")
+                return
+
+            db_data = {k: v for k, v in challenge_data.items() if v is not None and k not in ["is_sensible", "reason"]}
+            await add_challenge_to_database(db_data, self.session)
+            
+            reply_text = (
+                f"✅ Wyzwanie podjęte i zapisane\n"
+                f"**Dotyczy:** {challenge_data.get('content', 'Brak treści')}\n"
+                f"**Autor/Kogo dotyczy:** {message.author.mention}\n"
+            )
+            
+            def format_iso_date(iso_str):
+                try:
+                    return datetime.datetime.fromisoformat(iso_str.replace("Z", "+00:00")).strftime("%d-%m-%Y")
+                except Exception:
+                    return iso_str
+
+            if 'start_at' in challenge_data:
+                reply_text += f"**Od:** {format_iso_date(challenge_data['start_at'])}\n"
+            if 'end_at' in challenge_data:
+                reply_text += f"**Do:** {format_iso_date(challenge_data['end_at'])}\n"
+
+            await self._log_action(reply_text)
+        except Exception as e:
+            print(f"Error adding challenge: {e}")
+            await self._log_action("Wystąpił błąd podczas analizowania (Gemini) lub dodawania challange'a.")
+
+    async def handle_bot_mention(self, message: discord.Message):
+        print(f"Received mention, length: {len(message.content)}")
+
+        # Jeśli odpisujemy tagując bota na czyjąś wiadomość (dodanie cytatu)
+        if message.reference and message.reference.message_id and message.content.strip().lower() == f'<@{self.user.id}>':
+            await add_quote_to_database(message, self.session)
+            return
+        
+        # W innym wypadku zwykła konwersacja
         history = await self.scrape_channel_history(message.channel, limit=10)
         try:
             async with message.channel.typing():
@@ -120,14 +277,9 @@ class SigmaQuotesBot(discord.Client):
             print(f"Error generating content: {e}")
             await message.reply("Wystąpił błąd podczas generowania odpowiedzi.")
 
-    async def create_thread(self, message: discord.Message):
-        try:
-            await message.create_thread(name=message.content[:100])
-        except Exception as e:
-            print(f"Error creating thread: {e}")
 
-
-    # Zdarzenia Discord (Events)
+    # === Zdarzenia Discord (Events) ===
+    
     async def on_message(self, message: discord.Message):
         # Ignoruj wiadomości od samego siebie
         if message.author == self.user:
@@ -136,86 +288,19 @@ class SigmaQuotesBot(discord.Client):
         # Aktualizacja manifestu jeśli wpisano cokolwiek na dedykowanym kanale
         if message.channel.id == CWEL_MANIFESTO_CHANNEL_ID:
             await self.update_manifest()
-        if message.content.strip().lower().startswith("!komendy"):
-            commands_text = (
-                "Dostępne komendy:\n"
-                "- Odpowiedz na wiadomość z treścią `@SigmaQuotes` aby dodać ją jako cytat do bazy danych.\n"
-                "- !daily - dodaje dzienny challenge do bazy danych (tresc 1:1 zapisana w bazie)\n"
-                "- !challenge - dodaje challange do bazy danych (trzeba podac tresc, date zakonczenia oraz opcjonalnie date rozpoczecia)\n"
-            )
-            await message.reply(commands_text)
-            return
-        if message.content.strip().lower().startswith("!daily"):
-            try:
-                daily_content = message.content.strip()[len("!daily"):].strip()
-                if not daily_content:
-                    await message.reply("Musisz podać treść dziennego challange'a po komendzie !daily")
-                    return
-                await add_daily_challenge_to_database(daily_content)
-                await message.reply("Dzienny challange został dodany do bazy danych.")
-            except Exception as e:
-                print(f"Error adding daily challenge: {e}")
-                await message.reply("Wystąpił błąd podczas dodawania dziennego challange'a.")
-            return
-        if message.content.strip().lower().startswith("!challenge"):
-            try:
-                challenge_content = message.content.strip()[len("!challenge"):].strip()
-                if not challenge_content:
-                    await message.reply("Musisz podać treść challange'a po komendzie !challenge")
-                    return
-                
-                def generate_challenge_json():
-                    now_iso = datetime.datetime.now(ZoneInfo("Europe/Warsaw")).isoformat()
-                    prompt = (
-                        f"Przeanalizuj wyzwanie opisane w wiadomości wejściowej i wyodrębnij z niego kluczowe informacje.\n"
-                        f"Aktualna data i czas w tej strefie: {now_iso}\n"
-                        f"Wiadomość wejściowa: {challenge_content}\n\n"
-                        f"Zwróć sam czysty obiekt JSON (bez znaczników markdown, bez dodatkowego tekstu) zawierający klucze:\n"
-                        f"- \"content\" (string): Treść i opis wyzwania.\n"
-                        f"- \"author\" (string): Autor lub osoba na którą rzucono wyzwanie. Jeśli nie jest jasno powiedziane, przypisz domyślnie: '{message.author.display_name}'.\n"
-                        f"- \"start_at\" (string lub null): Data i czas rozpoczęcia wyzwania (w formacie ISO 8601). Zgadnij z kontekstu, jeśli nie ma i rzuć null.\n"
-                        f"- \"end_at\" (string lub null): Data i czas zakończenia wyzwania (w formacie ISO 8601). Zgadnij z kontekstu (np. do jutra, do piątku), jeśli wpisano ogólnikowo lub jeśli w ogóle nie ma, rzuć null.\n"
-                    )
-                    return self.gemini.models.generate_content(
-                        model="gemini-3.1-flash-lite-preview",
-                        contents=prompt,
-                        config=genai.types.GenerateContentConfig(
-                            response_mime_type="application/json"
-                        )
-                    )
-                response = await asyncio.to_thread(generate_challenge_json)
-                challenge_data = json.loads(response.text)
 
-                challenge_data = {k: v for k, v in challenge_data.items() if v is not None}
-
-                await add_challenge_to_database(challenge_data)
-                
-                reply_text = (
-                    f"🎯 Wyzwanie podjęte i zapisane!\n"
-                    f"**Dotyczy:** {challenge_data.get('content', 'Brak treści')}\n"
-                    f"**Autor/Kogo dotyczy:** {challenge_data.get('author', message.author.display_name)}\n"
-                )
-                if 'start_at' in challenge_data:
-                    reply_text += f"**Od:** {challenge_data['start_at']}\n"
-                if 'end_at' in challenge_data:
-                    reply_text += f"**Do:** {challenge_data['end_at']}\n"
-                    
-                await message.reply(reply_text)
-            except Exception as e:
-                print(f"Error adding challenge: {e}")
-                await message.reply("Wystąpił błąd podczas analizowania (Gemini) lub dodawania challange'a.")
+        # Obsługa kanałów funkcyjnych
+        if message.channel.id == DAILY_CHALLENGE_CHANNEL_ID:
+            await self.handle_daily_challenge(message)
             return
+
+        if message.channel.id == CHALLENGE_CHANNEL_ID:
+            await self.handle_challenge(message)
+            return
+
         # Jeśli bot został otagowany
         if self.user and self.user.mentioned_in(message):
-            print(f"Received mention, length: {len(message.content)}")
-
-            # Jeśli odpisujemy tagując bota na czyjąś wiadomość (dodanie cytatu)
-            if message.reference and message.reference.message_id and message.content.strip().lower() == f'<@{self.user.id}>':
-                await add_quote_to_database(message)
-                return
-            
-            # W innym wypadku zwykła konwersacja
-            await self.respond_to_message(message)
+            await self.handle_bot_mention(message)
             return
 
         # Tworzenie wątków z automatu na wybranych kanałach
@@ -230,7 +315,9 @@ class SigmaQuotesBot(discord.Client):
         if message.channel.id == CWEL_MANIFESTO_CHANNEL_ID:
             await self.update_manifest()
 
-    # Zadania okresowe (Tasks)
+
+    # === Zadania okresowe (Tasks) ===
+    
     @tasks.loop(time=TIME_TO_ANNOUNCE)
     async def announce_balance(self):
         print("Running scheduled balance announcement task...")
@@ -242,20 +329,19 @@ class SigmaQuotesBot(discord.Client):
         is_last_day = next_day.month != today.month
 
         if channel and isinstance(channel, discord.TextChannel) and is_last_day:
-            minio_id = USERS_TO_PING.get("minio", "339884510089052160")
-            veresek_id = USERS_TO_PING.get("veresek", "986324349067874326")
             await channel.send(f"<@{minio_id}> <@{veresek_id}> Dzisiaj ostatni dzień miesiąca, zapraszam do rozliczenia za przewinienia! 🗿")
 
     @tasks.loop(time=DAILY_CHALLENGE_TIME)
     async def daily_challenge(self):
         print("Running scheduled daily challenge task...")
         try:
-            challange = await get_random_daily_challenge()
+            challange = await get_random_daily_challenge(self.session)
         except Exception as e:
             print(f"Error fetching daily challenge: {e}")
             challange = "Nie udało się pobrać dziennego challange'a."
+            
         try:
-            active_challenges = await get_active_challenges()
+            active_challenges = await get_active_challenges(self.session)
             if active_challenges:
                 active_challenges_text = "\n".join([f"- **{c.get('author', 'Ktoś')}**: {c.get('content', '')}" for c in active_challenges])
             else:
@@ -263,11 +349,13 @@ class SigmaQuotesBot(discord.Client):
         except Exception as e:
             print(f"Error fetching active challenges: {e}")
             active_challenges_text = "Nie udało się pobrać aktywnych wyzwań."
+            
         try:
-            quote = await get_random_quote()
+            quote = await get_random_quote(self.session)
         except Exception as e:
             print(f"Error fetching random quote: {e}")
             quote = {"author": "Nieznany", "content": "Nie udało się pobrać cytatu."}
+            
         channel = self.get_channel(DAILY_CHALLENGE_CHANNEL_ID)
         if channel and isinstance(channel, discord.TextChannel):
             await channel.send(f"<@{minio_id}> <@{veresek_id}> Dzienny challange: {challange}")
@@ -280,4 +368,3 @@ if __name__ == "__main__":
     else:
         bot = SigmaQuotesBot()
         bot.run(TOKEN_DISCORD)
-

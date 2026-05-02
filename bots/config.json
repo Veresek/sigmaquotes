@@ -6,6 +6,8 @@
 	"balance_announce_channel_id": 1455924587912233109,
 	"cwel_manifesto_channel_id": 1470102957042303057,
 	"daily_challenge_channel_id": 1498960424496795678,
+	"challenge_channel_id": 1479407068661288990,
+	"logs_channel_id": 1499835671823515819,
 	"users_to_ping": {
 		"minio": "339884510089052160",
 		"veresek": "986324349067874326"

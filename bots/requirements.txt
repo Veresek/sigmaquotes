@@ -4,3 +4,5 @@ python-dotenv
 dotenv
 asyncio
 tzdata
+pytest
+pytest-asyncio

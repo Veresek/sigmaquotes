@@ -85,3 +85,7 @@ jobs:
       - name: Syntax check
         working-directory: bots
         run: python -m py_compile sigmaquotes.py
+      
+      - name: Run tests
+        working-directory: bots
+        run: pytest 
