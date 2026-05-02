@@ -80,7 +80,7 @@ class SigmaQuotesBot(discord.Client):
     # === Pamięć konwersacji ===
 
     MEMORY_TTL = 1800  # 30 minut
-    MEMORY_MAX_ENTRIES = 15
+    MEMORY_MAX_ENTRIES = 20
 
     def _update_memory(self, channel_id: int, user_msg: str, user_name: str, bot_response: str):
         """Zapisuje ostatnią wymianę do pamięci krótkoterminowej."""
@@ -139,7 +139,7 @@ class SigmaQuotesBot(discord.Client):
                 print(f"Błąd API Gemini ({e}). Ponawiam (próba {attempt + 1}/{max_retries}) za {delay} sekund...")
                 await asyncio.sleep(delay)
 
-    async def generate_content_async(self, message: discord.Message, history: list, memory: list = None, context_type: str = "mention") -> str:
+    async def generate_content_async(self, message: discord.Message, history: list, memory: list = None, context_type: str = "mention", old_reply_text: str = None) -> str:
         """Generuje odpowiedź konwersacyjną (czat) z pełnym kontekstem."""
         # Formatowanie historii ze strukturą reply i oznaczeniem bota
         history_lines = []
@@ -159,7 +159,9 @@ class SigmaQuotesBot(discord.Client):
             memory_text = "\n".join(memory_lines)
 
         # Oczyszczenie treści z raw mentionów bota
-        user_content = message.content.replace(f'<@{self.user.id}>', '').strip() or message.content
+        user_content = message.content.replace(f'<@{self.user.id}>', '').strip()
+        if not user_content:
+            user_content = "[Użytkownik zaczepia Cię bez słowa]"
 
         now = datetime.datetime.now(ZoneInfo("Europe/Warsaw"))
         is_thread = isinstance(message.channel, discord.Thread)
@@ -167,6 +169,8 @@ class SigmaQuotesBot(discord.Client):
         contents = f"Kontekst ostatnich wiadomości na kanale (od najstarszej do najnowszej):\n{history_text}\n\n"
         if memory_text:
             contents += f"Twoja pamięć wcześniejszych rozmów na tym kanale (starsze, spoza widocznej historii):\n{memory_text}\n\n"
+        if old_reply_text:
+            contents += f"Użytkownik odpowiada (reply) na Twoją BARDZO STARĄ wiadomość (sprzed historii), która brzmiała:\n{old_reply_text}\n\n"
         contents += f"Odpowiedz na tę wiadomość: '{user_content}' (autor: {message.author.display_name})"
 
         context_desc = {
@@ -176,10 +180,6 @@ class SigmaQuotesBot(discord.Client):
 
         system_instruction = (
             "Nazywasz się SigmaQuotesBot. Jesteś po prostu ziomkiem z serwera Discord, kumplem do pogadania na luzie. "
-            "Zachowuj się i wypowiadaj niezwykle naturalnie, jak człowiek, a nie jak sztuczna inteligencja. Używaj potocznego języka, "
-            "slangu, rzucaj żartami i bądź luźny. Nie bądź sztywny, asystencki ani formalny, ale staraj się pisać poprawnie językowo. "
-            "Odpowiadaj krótko i zwięźle (chyba że rozmowa wymaga dłuższej wypowiedzi), tak jak typowy użytkownik na czacie. "
-            "Absolutnie nigdy nie pytaj 'W czym mogę pomóc?' ani nie przedstawiaj się. "
             "Reaguj adekwatnie do sytuacji, miej własne zdanie i normalnie dyskutuj z użytkownikami. Możesz też czasem użyć jakiejś emotikony.\n\n"
             f"<kontekst>\n"
             f"Aktualna data i czas: {now.strftime('%Y-%m-%d %H:%M:%S')} ({now.strftime('%A')})\n"
@@ -191,7 +191,15 @@ class SigmaQuotesBot(discord.Client):
             "</charakter>\n\n"
             "Ten manifest to Twoje poglądy na świat, ale traktuj je jako swoją podświadomość. Nie cytuj go, nie wspominaj o nim "
             "ani nie wymuszaj ciągłej motywacji czy 'lecenia do roboty' na siłę w każdej wiadomości. "
-            "Bądź po prostu normalnym, spoko gościem, z którym można o wszystkim pogadać, a twoje odpowiedzi są kierowane przez te zasady.\n\n"
+            "Bądź po prostu normalnym, spoko gościem, z którym można o wszystkim pogadać.\n\n"
+            "<zasady_osobowosci>\n"
+            "- Zachowuj się niezwykle naturalnie, używaj slangu i luźnego języka. Nie bądź sztywny ani formalny.\n"
+            "- Odpowiadaj zwięźle (max 3 zdania), chyba że ktoś faktycznie potrzebuje pomocy i musisz coś wytłumaczyć.\n"
+            "- Pisz ZAWSZE po polsku, na inne języki przełączaj się tylko na wyraźne żądanie.\n"
+            "- Nie jesteś asystentem od programowania. Nie generuj kodu bez absolutnej konieczności.\n"
+            "- NIGDY nikogo nie oznaczaj (żadnych @username ani <@id>). To co piszesz to już automatycznie odpowiedź.\n"
+            "- Absolutnie nigdy nie pytaj 'W czym mogę pomóc?' ani nie przedstawiaj się.\n"
+            "</zasady_osobowosci>\n\n"
             "<zasady_konwersacji>\n"
             "- Jeśli ktoś kontynuuje z tobą rozmowę (reply lub ponowny mention), KONTYNUUJ wątek. Nie zaczynaj od nowa.\n"
             "- Pamiętaj o kontekście wcześniejszych wiadomości. Jeśli ktoś nawiązuje do czegoś co było powiedziane wcześniej, reaguj na to.\n"
@@ -261,6 +269,7 @@ class SigmaQuotesBot(discord.Client):
         history = []
         for msg in raw_messages:
             entry = {
+                "id": msg.id,
                 "username": msg.author.display_name,
                 "content": msg.content.strip(),
                 "is_bot": msg.author == self.user,
@@ -361,9 +370,21 @@ class SigmaQuotesBot(discord.Client):
         history = await self.scrape_channel_history(message.channel, limit=history_limit)
         memory = self._get_memory(message.channel.id)
 
+        old_reply_text = None
+        if context_type == "reply" and message.reference and message.reference.message_id:
+            if not any(msg.get("id") == message.reference.message_id for msg in history):
+                try:
+                    ref_msg = message.reference.cached_message
+                    if not ref_msg:
+                        ref_msg = await message.channel.fetch_message(message.reference.message_id)
+                    if ref_msg:
+                        old_reply_text = ref_msg.content.strip()
+                except Exception:
+                    pass
+
         try:
             async with message.channel.typing():
-                response = await self.generate_content_async(message, history=history, memory=memory, context_type=context_type)
+                response = await self.generate_content_async(message, history=history, memory=memory, context_type=context_type, old_reply_text=old_reply_text)
 
             if response and response.strip():
                 await message.reply(response)
