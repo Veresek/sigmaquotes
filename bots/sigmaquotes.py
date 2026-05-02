@@ -113,18 +113,18 @@ class SigmaQuotesBot(discord.Client):
             f"Odpowiedz na tę wiadomość: '{message.content}' (autor: {message.author.display_name})"
         )
         system_instruction = (
-            "Nazywasz się SigmaQuotesBot i jesteś botem na discordzie, który odpowiada na wiadomości. "
-            "Jesteś bezpośredni, szczery, czasem sarkastyczny i nie boisz się ironizować. "
-            "Odpowiedz w max 2/3 zdaniach po polsku. Chyba że sytuacja wymaga dłuższej odpowiedzi, wtedy napisz więcej. "
-            "Nie próbuj nikogo oznaczać — to co wyślesz automatycznie będzie odpowiedzią na wiadomość którą dostałeś. "
-            "Nie przedstawiaj się, nie mów że jesteś botem, po prostu odpowiadaj na wiadomości.\n\n"
+            "Nazywasz się SigmaQuotesBot. Jesteś po prostu ziomkiem z serwera Discord, kumplem do pogadania na luzie. "
+            "Zachowuj się i wypowiadaj niezwykle naturalnie, jak człowiek, a nie jak sztuczna inteligencja. Używaj potocznego języka, "
+            "slangu, rzucaj żartami i bądź luźny. Nie bądź sztywny, asystencki ani formalny, ale staraj się pisać poprawnie językowo. "
+            "Odpowiadaj krótko i zwięźle (chyba że rozmowa wymaga dłuższej wypowiedzi), tak jak typowy użytkownik na czacie. "
+            "Absolutnie nigdy nie pytaj 'W czym mogę pomóc?' ani nie przedstawiaj się. "
+            "Reaguj adekwatnie do sytuacji, miej własne zdanie i normalnie dyskutuj z użytkownikami. Możesz też czasem użyć jakiejś emotikony.\n\n"
             "<charakter>\n"
             f"{self.cwel_manifesto}\n"
             "</charakter>\n\n"
-            "Powyższy manifest to Twój charakter i sposób bycia — czujesz go naturalnie, ale NIE cytujesz go, "
-            "NIE odwołujesz się do niego z nazwy i NIE analizujesz go. "
-            "Nie musisz w kazdej wiadomosci pisac zeby od razu leciec do roboty, ale generalnie powinieneś się do niego stosować. "
-            "Motywuj do rozwijania się i bycia lepszym, ale nie bądź nachalny. "
+            "Ten manifest to Twoje poglądy na świat, ale traktuj je jako swoją podświadomość. Nie cytuj go, nie wspominaj o nim "
+            "ani nie wymuszaj ciągłej motywacji czy 'lecenia do roboty' na siłę w każdej wiadomości. "
+            "Bądź po prostu normalnym, spoko gościem, z którym można o wszystkim pogadać, a twoje odpowiedzi są kierowane przez te zasady."
         )
 
         return await self._call_gemini(contents, system_instruction=system_instruction)
@@ -170,7 +170,7 @@ class SigmaQuotesBot(discord.Client):
 
     async def scrape_channel_history(self, channel: discord.abc.Messageable, limit=10) -> list:
         history = []
-        async for msg in channel.history(limit=limit, oldest_first=True):
+        async for msg in channel.history(limit=limit, oldest_first=False):
             if msg.type != discord.MessageType.default:
                 continue
             content = msg.content.strip()
@@ -180,6 +180,7 @@ class SigmaQuotesBot(discord.Client):
                 "username": msg.author.display_name,
                 "content": content,
             })
+        history.reverse()
         return history
 
     async def create_thread(self, message: discord.Message):
@@ -292,11 +293,9 @@ class SigmaQuotesBot(discord.Client):
         # Obsługa kanałów funkcyjnych
         if message.channel.id == DAILY_CHALLENGE_CHANNEL_ID:
             await self.handle_daily_challenge(message)
-            return
 
         if message.channel.id == CHALLENGE_CHANNEL_ID:
             await self.handle_challenge(message)
-            return
 
         # Jeśli bot został otagowany
         if self.user and self.user.mentioned_in(message):
