@@ -8,7 +8,6 @@ from google import genai
 from dotenv import load_dotenv
 from zoneinfo import ZoneInfo
 from api_services import cwel_manifesto_scraper, add_quote_to_database, get_random_quote, get_random_daily_challenge, get_active_challenges, add_challenge_to_database, add_daily_challenge_to_database
-from typing import Dict, Any
 
 # Wczytywanie z .env
 load_dotenv()

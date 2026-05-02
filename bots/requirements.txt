@@ -1,9 +1,6 @@
 discord.py 
 google-genai 
 python-dotenv
-zoneinfo
-json
 dotenv
-os
-datatime
 asyncio
+tzdata
