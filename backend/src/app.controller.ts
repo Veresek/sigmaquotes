@@ -1,5 +1,12 @@
-import { Controller, Get, Post, Body } from '@nestjs/common';
+import { Controller, Get, Post, Body, UseGuards } from '@nestjs/common';
 import { AppService } from './app.service';
+import { ApiKeyGuard } from './api-key.guard';
+import {
+  CreateQuoteDto,
+  UpdateManifestoDto,
+  CreateDailyChallengeDto,
+  CreateChallengeDto,
+} from './dto';
 
 @Controller()
 export class AppController {
@@ -36,35 +43,31 @@ export class AppController {
   }
 
   @Post('manifesto')
-  async updateManifesto(@Body() body: { content: string }) {
+  @UseGuards(ApiKeyGuard)
+  async updateManifesto(@Body() body: UpdateManifestoDto) {
     return this.appService.updateManifesto(body.content);
   }
 
   @Post('quotes')
-  async createQuote(@Body() body: { author: string; content: string }) {
+  @UseGuards(ApiKeyGuard)
+  async createQuote(@Body() body: CreateQuoteDto) {
     return this.appService.createQuote(body.author, body.content);
   }
 
   @Post('daily-challenge')
-  async createDailyChallenge(@Body() body: { content: string }) {
+  @UseGuards(ApiKeyGuard)
+  async createDailyChallenge(@Body() body: CreateDailyChallengeDto) {
     return this.appService.createDailyChallenge(body.content);
   }
 
   @Post('challenge')
-  async createChallenge(
-    @Body()
-    body: {
-      author: string;
-      content: string;
-      start_at: Date;
-      end_at: Date;
-    },
-  ) {
+  @UseGuards(ApiKeyGuard)
+  async createChallenge(@Body() body: CreateChallengeDto) {
     return this.appService.createChallenge(
       body.author,
       body.content,
-      body.start_at,
-      body.end_at,
+      body.start_at ? new Date(body.start_at) : new Date(),
+      new Date(body.end_at),
     );
   }
 }
