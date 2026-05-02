@@ -291,12 +291,10 @@ class SigmaQuotesBot(discord.Client):
 
         # Obsługa kanałów funkcyjnych
         if message.channel.id == DAILY_CHALLENGE_CHANNEL_ID:
-            await self.handle_daily_challenge(message)
-            return
+            await self.handle_daily_challenge(message)      
 
         if message.channel.id == CHALLENGE_CHANNEL_ID:
             await self.handle_challenge(message)
-            return
 
         # Jeśli bot został otagowany
         if self.user and self.user.mentioned_in(message):
