@@ -170,7 +170,7 @@ class SigmaQuotesBot(discord.Client):
 
     async def scrape_channel_history(self, channel: discord.abc.Messageable, limit=10) -> list:
         history = []
-        async for msg in channel.history(limit=limit, oldest_first=True):
+        async for msg in channel.history(limit=limit, oldest_first=False):
             if msg.type != discord.MessageType.default:
                 continue
             content = msg.content.strip()
@@ -180,6 +180,7 @@ class SigmaQuotesBot(discord.Client):
                 "username": msg.author.display_name,
                 "content": content,
             })
+        history.reverse()
         return history
 
     async def create_thread(self, message: discord.Message):
