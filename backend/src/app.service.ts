@@ -13,7 +13,7 @@ export class AppService {
 
   async getRandomQuote() {
     const quote = await prisma.$queryRaw<
-      any[]
+      { id: number; content: string; author: string; created_at: Date | null }[]
     >`SELECT * FROM "quotes" ORDER BY RANDOM() LIMIT 1`;
     return quote[0] || { content: '', author: '' };
   }
@@ -29,7 +29,7 @@ export class AppService {
 
   async getDailyChallenge() {
     const challenge = await prisma.$queryRaw<
-      any[]
+      { id: number; content: string }[]
     >`SELECT * FROM "daily_challenges" ORDER BY RANDOM() LIMIT 1`;
     return challenge[0] || { content: '' };
   }

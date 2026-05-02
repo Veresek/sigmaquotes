@@ -2,14 +2,13 @@ import pytest
 import discord
 from unittest.mock import AsyncMock, patch
 
-# Importujemy bota tak, aby zamockować klienta Gemini zanim podejmie próbę autoryzacji
-with patch('google.genai.Client') as mock_genai_client:
-    from sigmaquotes import SigmaQuotesBot
+from sigmaquotes import SigmaQuotesBot
 
 @pytest.fixture
 def bot():
-    # Inicjalizujemy bota omijając standardową inicjalizację discord.Client
-    with patch('discord.Client.__init__', return_value=None):
+    # Inicjalizujemy bota omijając standardową inicjalizację discord.Client i mockując klienta Gemini
+    with patch('discord.Client.__init__', return_value=None), \
+         patch('sigmaquotes.genai.Client'):
         test_bot = SigmaQuotesBot()
         test_bot.session = AsyncMock()
         test_bot._log_action = AsyncMock()
