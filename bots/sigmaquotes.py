@@ -2,6 +2,7 @@ import os
 import datetime
 import asyncio
 import json
+import time
 import discord
 import aiohttp
 from discord.ext import tasks
@@ -51,6 +52,7 @@ class SigmaQuotesBot(discord.Client):
         self.gemini = genai.Client(api_key=GEMINI_API_KEY)
         self.cwel_manifesto = ""
         self.session = None
+        self.conversation_memory = {}  # {channel_id: {"entries": [...], "last_activity": timestamp}}
 
     async def setup_hook(self):
         # Inicjalizacja zadań w tle i sesji HTTP
@@ -74,6 +76,39 @@ class SigmaQuotesBot(discord.Client):
         new_manifesto = await cwel_manifesto_scraper(self, CWEL_MANIFESTO_CHANNEL_ID, self.session)
         if new_manifesto:
             self.cwel_manifesto = new_manifesto
+
+    # === Pamięć konwersacji ===
+
+    MEMORY_TTL = 1800  # 30 minut
+    MEMORY_MAX_ENTRIES = 15
+
+    def _update_memory(self, channel_id: int, user_msg: str, user_name: str, bot_response: str):
+        """Zapisuje ostatnią wymianę do pamięci krótkoterminowej."""
+        now = time.time()
+        if channel_id not in self.conversation_memory:
+            self.conversation_memory[channel_id] = {"entries": [], "last_activity": now}
+
+        mem = self.conversation_memory[channel_id]
+        mem["last_activity"] = now
+        mem["entries"].append({
+            "user": user_name,
+            "content": user_msg[:600],
+            "bot_response": bot_response[:600],
+            "time": now
+        })
+
+        if len(mem["entries"]) > self.MEMORY_MAX_ENTRIES:
+            mem["entries"] = mem["entries"][-self.MEMORY_MAX_ENTRIES:]
+
+    def _get_memory(self, channel_id: int) -> list:
+        """Pobiera aktywną pamięć konwersacji dla kanału (TTL 30 min)."""
+        now = time.time()
+        mem = self.conversation_memory.get(channel_id)
+        if not mem or (now - mem["last_activity"]) > self.MEMORY_TTL:
+            if channel_id in self.conversation_memory:
+                del self.conversation_memory[channel_id]
+            return []
+        return mem["entries"]
 
     # === Logika LLM (Gemini) ===
     
@@ -104,14 +139,41 @@ class SigmaQuotesBot(discord.Client):
                 print(f"Błąd API Gemini ({e}). Ponawiam (próba {attempt + 1}/{max_retries}) za {delay} sekund...")
                 await asyncio.sleep(delay)
 
-    async def generate_content_async(self, message: discord.Message, history: list) -> str:
-        """Generuje odpowiedź konwersacyjną (czat)."""
-        history_text = "\n".join([f"{msg['username']}: {msg['content']}" for msg in history])
+    async def generate_content_async(self, message: discord.Message, history: list, memory: list = None, context_type: str = "mention") -> str:
+        """Generuje odpowiedź konwersacyjną (czat) z pełnym kontekstem."""
+        # Formatowanie historii ze strukturą reply i oznaczeniem bota
+        history_lines = []
+        for msg in history:
+            prefix = "🤖 " if msg.get("is_bot") else ""
+            reply_tag = f"[↩ do {msg['reply_to']}] " if "reply_to" in msg else ""
+            history_lines.append(f"{prefix}{reply_tag}{msg['username']}: {msg['content']}")
+        history_text = "\n".join(history_lines)
 
-        contents = (
-            f"Kontekst ostatnich wiadomości (od najstarszej do najnowszej):\n{history_text}\n\n"
-            f"Odpowiedz na tę wiadomość: '{message.content}' (autor: {message.author.display_name})"
-        )
+        # Formatowanie pamięci sesyjnej
+        memory_text = ""
+        if memory:
+            memory_lines = []
+            for entry in memory:
+                memory_lines.append(f"  {entry['user']}: {entry['content']}")
+                memory_lines.append(f"  🤖 SigmaQuotesBot: {entry['bot_response']}")
+            memory_text = "\n".join(memory_lines)
+
+        # Oczyszczenie treści z raw mentionów bota
+        user_content = message.content.replace(f'<@{self.user.id}>', '').strip() or message.content
+
+        now = datetime.datetime.now(ZoneInfo("Europe/Warsaw"))
+        is_thread = isinstance(message.channel, discord.Thread)
+
+        contents = f"Kontekst ostatnich wiadomości na kanale (od najstarszej do najnowszej):\n{history_text}\n\n"
+        if memory_text:
+            contents += f"Twoja pamięć wcześniejszych rozmów na tym kanale (starsze, spoza widocznej historii):\n{memory_text}\n\n"
+        contents += f"Odpowiedz na tę wiadomość: '{user_content}' (autor: {message.author.display_name})"
+
+        context_desc = {
+            "mention": "Użytkownik oznaczył cię @mention w wiadomości.",
+            "reply": "Użytkownik odpowiedział (reply) na twoją wcześniejszą wiadomość — kontynuuj rozmowę naturalnie.",
+        }
+
         system_instruction = (
             "Nazywasz się SigmaQuotesBot. Jesteś po prostu ziomkiem z serwera Discord, kumplem do pogadania na luzie. "
             "Zachowuj się i wypowiadaj niezwykle naturalnie, jak człowiek, a nie jak sztuczna inteligencja. Używaj potocznego języka, "
@@ -119,12 +181,25 @@ class SigmaQuotesBot(discord.Client):
             "Odpowiadaj krótko i zwięźle (chyba że rozmowa wymaga dłuższej wypowiedzi), tak jak typowy użytkownik na czacie. "
             "Absolutnie nigdy nie pytaj 'W czym mogę pomóc?' ani nie przedstawiaj się. "
             "Reaguj adekwatnie do sytuacji, miej własne zdanie i normalnie dyskutuj z użytkownikami. Możesz też czasem użyć jakiejś emotikony.\n\n"
+            f"<kontekst>\n"
+            f"Aktualna data i czas: {now.strftime('%Y-%m-%d %H:%M:%S')} ({now.strftime('%A')})\n"
+            f"Typ interakcji: {context_desc.get(context_type, context_desc['mention'])}\n"
+            f"{'Jesteś w wątku (thread) — kontynuuj temat wątku.' if is_thread else 'Jesteś na kanale ogólnym.'}\n"
+            f"</kontekst>\n\n"
             "<charakter>\n"
             f"{self.cwel_manifesto}\n"
             "</charakter>\n\n"
             "Ten manifest to Twoje poglądy na świat, ale traktuj je jako swoją podświadomość. Nie cytuj go, nie wspominaj o nim "
             "ani nie wymuszaj ciągłej motywacji czy 'lecenia do roboty' na siłę w każdej wiadomości. "
-            "Bądź po prostu normalnym, spoko gościem, z którym można o wszystkim pogadać, a twoje odpowiedzi są kierowane przez te zasady."
+            "Bądź po prostu normalnym, spoko gościem, z którym można o wszystkim pogadać, a twoje odpowiedzi są kierowane przez te zasady.\n\n"
+            "<zasady_konwersacji>\n"
+            "- Jeśli ktoś kontynuuje z tobą rozmowę (reply lub ponowny mention), KONTYNUUJ wątek. Nie zaczynaj od nowa.\n"
+            "- Pamiętaj o kontekście wcześniejszych wiadomości. Jeśli ktoś nawiązuje do czegoś co było powiedziane wcześniej, reaguj na to.\n"
+            "- Wiadomości oznaczone 🤖 to twoje własne wcześniejsze wypowiedzi. Bądź spójny z tym co mówiłeś.\n"
+            "- Rozróżniaj rozmowy z różnymi osobami. Nie mieszaj kontekstów.\n"
+            "- Jeśli ktoś cię trolluje, możesz trollować z powrotem. Nie bądź potulny.\n"
+            "- Nie powtarzaj się. Nie mów tego samego co powiedziałeś wcześniej w tej konwersacji.\n"
+            "</zasady_konwersacji>"
         )
 
         return await self._call_gemini(contents, system_instruction=system_instruction)
@@ -168,19 +243,34 @@ class SigmaQuotesBot(discord.Client):
         if logs_channel:
             await logs_channel.send(text)
 
-    async def scrape_channel_history(self, channel: discord.abc.Messageable, limit=10) -> list:
-        history = []
+    async def scrape_channel_history(self, channel: discord.abc.Messageable, limit=15) -> list:
+        """Pobiera historię kanału z rozwiązywaniem reply w obrębie pobranego zakresu."""
+        raw_messages = []
         async for msg in channel.history(limit=limit, oldest_first=False):
             if msg.type != discord.MessageType.default:
                 continue
-            content = msg.content.strip()
-            if not content:
+            if not msg.content.strip():
                 continue
-            history.append({
+            raw_messages.append(msg)
+
+        raw_messages.reverse()
+
+        # Lookup do rozwiązywania reply bez dodatkowych zapytań API
+        msg_lookup = {msg.id: msg for msg in raw_messages}
+
+        history = []
+        for msg in raw_messages:
+            entry = {
                 "username": msg.author.display_name,
-                "content": content,
-            })
-        history.reverse()
+                "content": msg.content.strip(),
+                "is_bot": msg.author == self.user,
+            }
+            if msg.reference and msg.reference.message_id:
+                ref = msg.reference.cached_message or msg_lookup.get(msg.reference.message_id)
+                if ref:
+                    entry["reply_to"] = ref.author.display_name
+            history.append(entry)
+
         return history
 
     async def create_thread(self, message: discord.Message):
@@ -256,22 +346,29 @@ class SigmaQuotesBot(discord.Client):
             print(f"Error adding challenge: {e}")
             await self._log_action("Wystąpił błąd podczas analizowania (Gemini) lub dodawania challange'a.")
 
-    async def handle_bot_mention(self, message: discord.Message):
-        print(f"Received mention, length: {len(message.content)}")
+    async def handle_bot_conversation(self, message: discord.Message, context_type: str = "mention"):
+        """Obsługa konwersacji z botem (mention lub reply)."""
+        print(f"Received {context_type}, length: {len(message.content)}")
 
-        # Jeśli odpisujemy tagując bota na czyjąś wiadomość (dodanie cytatu)
-        if message.reference and message.reference.message_id and message.content.strip().lower() == f'<@{self.user.id}>':
+        # Dodawanie cytatu — tylko gdy ktoś oznaczy bota samym @ na czyjejś wiadomości
+        if context_type == "mention" and message.reference and message.reference.message_id and message.content.strip().lower() == f'<@{self.user.id}>':
             await add_quote_to_database(message, self.session)
             return
-        
-        # W innym wypadku zwykła konwersacja
-        history = await self.scrape_channel_history(message.channel, limit=10)
+
+        is_thread = isinstance(message.channel, discord.Thread)
+        history_limit = 25 if is_thread else 15
+
+        history = await self.scrape_channel_history(message.channel, limit=history_limit)
+        memory = self._get_memory(message.channel.id)
+
         try:
             async with message.channel.typing():
-                response = await self.generate_content_async(message, history=history)
-                
+                response = await self.generate_content_async(message, history=history, memory=memory, context_type=context_type)
+
             if response and response.strip():
                 await message.reply(response)
+                clean_content = message.content.replace(f'<@{self.user.id}>', '').strip() or message.content
+                self._update_memory(message.channel.id, clean_content, message.author.display_name, response)
             else:
                 await message.reply("Nie wiem co powiedzieć, zatkało mnie.")
         except Exception as e:
@@ -299,8 +396,20 @@ class SigmaQuotesBot(discord.Client):
 
         # Jeśli bot został otagowany
         if self.user and self.user.mentioned_in(message):
-            await self.handle_bot_mention(message)
+            await self.handle_bot_conversation(message, context_type="mention")
             return
+
+        # Jeśli ktoś odpowiedział (reply) na wiadomość bota
+        if message.reference and message.reference.message_id:
+            try:
+                ref_msg = message.reference.cached_message
+                if ref_msg is None:
+                    ref_msg = await message.channel.fetch_message(message.reference.message_id)
+                if ref_msg and ref_msg.author == self.user:
+                    await self.handle_bot_conversation(message, context_type="reply")
+                    return
+            except Exception:
+                pass
 
         # Tworzenie wątków z automatu na wybranych kanałach
         if message.channel.id in AUTO_THREAD_CHANNELS and not message.author.bot:
