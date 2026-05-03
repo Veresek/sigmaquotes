@@ -463,11 +463,11 @@ class SigmaQuotesBot(discord.Client):
     @tasks.loop(time=DAILY_CHALLENGE_TIME)
     async def daily_challenge(self):
         print("Running scheduled daily challenge task...")
-        try:
-            challange = await get_random_daily_challenge(self.session)
-        except Exception as e:
-            print(f"Error fetching daily challenge: {e}")
-            challange = "Nie udało się pobrać dziennego challange'a."
+        # try:
+        #     challange = await get_random_daily_challenge(self.session)
+        # except Exception as e:
+        #     print(f"Error fetching daily challenge: {e}")
+        #     challange = "Nie udało się pobrać dziennego challange'a."
             
         try:
             active_challenges = await get_active_challenges(self.session)
@@ -487,7 +487,7 @@ class SigmaQuotesBot(discord.Client):
             
         channel = self.get_channel(DAILY_CHALLENGE_CHANNEL_ID)
         if channel and isinstance(channel, discord.TextChannel):
-            await channel.send(f"<@{minio_id}> <@{veresek_id}> Dzienny challange: {challange}")
+            # await channel.send(f"<@{minio_id}> <@{veresek_id}> Dzienny challange: {challange}")
             await channel.send(f"Aktualne wyzwania:\n{active_challenges_text}")
             await channel.send(f"Cytat dnia:\n**{quote['content']}**\n- *{quote['author']}*")
 
