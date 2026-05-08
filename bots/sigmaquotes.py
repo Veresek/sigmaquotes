@@ -383,8 +383,7 @@ class SigmaQuotesBot(discord.Client):
                     pass
 
         try:
-            async with message.channel.typing():
-                response = await self.generate_content_async(message, history=history, memory=memory, context_type=context_type, old_reply_text=old_reply_text)
+            response = await self.generate_content_async(message, history=history, memory=memory, context_type=context_type, old_reply_text=old_reply_text)
 
             if response and response.strip():
                 await message.reply(response)
