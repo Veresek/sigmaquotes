@@ -58,7 +58,7 @@ class SigmaQuotesBot(discord.Client):
         # Inicjalizacja zadań w tle i sesji HTTP
         self.session = aiohttp.ClientSession()
         self.announce_balance.start()
-        self.daily_challenge.start()
+        # self.daily_challenge.start()
 
     async def close(self):
         # Zamknięcie sesji HTTP gdy bot jest zamykany
@@ -408,11 +408,11 @@ class SigmaQuotesBot(discord.Client):
             await self.update_manifest()
 
         # Obsługa kanałów funkcyjnych
-        if message.channel.id == DAILY_CHALLENGE_CHANNEL_ID:
-            await self.handle_daily_challenge(message)
+        # if message.channel.id == DAILY_CHALLENGE_CHANNEL_ID:
+        #     await self.handle_daily_challenge(message)
 
-        if message.channel.id == CHALLENGE_CHANNEL_ID:
-            await self.handle_challenge(message)
+        # if message.channel.id == CHALLENGE_CHANNEL_ID:
+        #     await self.handle_challenge(message)
 
         # Jeśli bot został otagowany
         if self.user and self.user.mentioned_in(message):
