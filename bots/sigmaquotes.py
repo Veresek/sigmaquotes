@@ -122,7 +122,7 @@ class SigmaQuotesBot(discord.Client):
                 kwargs['response_mime_type'] = "application/json"
                 
             return self.gemini.models.generate_content(
-                model="gemini-3.1-flash-lite-preview",
+                model="gemini-3.1-flash-lite",
                 contents=prompt,
                 config=genai.types.GenerateContentConfig(**kwargs)
             )
