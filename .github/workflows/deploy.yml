@@ -30,17 +30,17 @@ jobs:
                       ${{ secrets.BOTS_ENV_FILE }}
                       EOF
 
-            - name: Deploy containers via Docker Compose
-              uses: appleboy/ssh-action@v1.2.4
-              with:
-                  host: ${{ secrets.DEPLOY_HOST }}
-                  username: ${{ secrets.DEPLOY_USER }}
-                  key: ${{ secrets.DEPLOY_KEY }}
-                  port: ${{ secrets.DEPLOY_PORT }}
-                  script: |
-                      cd ./sigmaquotes
-                      git pull origin main
-                      sudo docker compose --env-file backend/.env -f docker-compose.yml up -d --build
+            # - name: Deploy containers via Docker Compose
+            #   uses: appleboy/ssh-action@v1.2.4
+            #   with:
+            #       host: ${{ secrets.DEPLOY_HOST }}
+            #       username: ${{ secrets.DEPLOY_USER }}
+            #       key: ${{ secrets.DEPLOY_KEY }}
+            #       port: ${{ secrets.DEPLOY_PORT }}
+            #       script: |
+            #           cd ./sigmaquotes
+            #           git pull origin main
+            #           sudo docker compose --env-file backend/.env -f docker-compose.yml up -d --build
 
             - name: Restart Python Bot via PM2
               uses: appleboy/ssh-action@v1.2.4
